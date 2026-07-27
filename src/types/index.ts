@@ -57,3 +57,23 @@ export interface VehiculoFicha {
   utilidad: number | null
   margen: number | null
 }
+
+export interface Gasto {
+  id: number
+  vehiculo_id: number
+  categoria_id: number
+  descripcion: string
+  importe: number
+  fecha: string
+  pagador_tipo: 'empresa' | 'socio'
+  pagador_socio_id: number | null
+  created_at: string
+}
+
+export interface Socio {
+  id: number
+  nombre: string
+  telefono: string | null
+  correo: string | null
+  activo: boolean
+}

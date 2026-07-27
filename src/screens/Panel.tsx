@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { mxn } from '../lib/helpers'
@@ -61,6 +62,7 @@ function Kpi({ label, value, nota }: { label: string; value: string; nota?: stri
 }
 
 export function VehiculoTabla({ vehiculos, veCifras }: { vehiculos: VehiculoFicha[]; veCifras: boolean }) {
+  const navigate = useNavigate()
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
       <thead>
@@ -74,7 +76,7 @@ export function VehiculoTabla({ vehiculos, veCifras }: { vehiculos: VehiculoFich
         {vehiculos.map((v) => {
           const dias = v.fecha_compra ? Math.floor((Date.now() - new Date(v.fecha_compra).getTime()) / 86400000) : null
           return (
-            <tr key={v.id} style={{ borderTop: '1px solid #f0ede6' }}>
+            <tr key={v.id} onClick={() => navigate(`/vehiculo/${v.id}`)} style={{ borderTop: '1px solid #f0ede6', cursor: 'pointer' }}>
               <td style={{ padding: '10px' }}>{v.marca} {v.modelo} {v.anio} <span style={{ color: '#8b8578' }}>· {v.id_interno}</span></td>
               <td style={{ padding: '10px' }}>{v.estado_comercial}</td>
               <td style={{ padding: '10px', textAlign: 'right' }}>{dias ?? '—'}</td>
@@ -84,6 +86,9 @@ export function VehiculoTabla({ vehiculos, veCifras }: { vehiculos: VehiculoFich
             </tr>
           )
         })}
+        {vehiculos.length === 0 && (
+          <tr><td colSpan={veCifras ? 6 : 4} style={{ padding: 20, textAlign: 'center', color: '#8b8578' }}>Sin unidades capturadas todavía.</td></tr>
+        )}
       </tbody>
     </table>
   )

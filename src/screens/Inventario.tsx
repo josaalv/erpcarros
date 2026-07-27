@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { mxn } from '../lib/helpers'
@@ -6,6 +7,7 @@ import type { VehiculoFicha } from '../types'
 
 export default function Inventario() {
   const { perfil } = useAuth()
+  const navigate = useNavigate()
   const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(true)
@@ -23,6 +25,7 @@ export default function Inventario() {
   }, [])
 
   const veMinimo = perfil?.rol === 'admin'
+  const puedeCrear = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
   const q = busqueda.trim().toLowerCase()
   const filtrados = vehiculos.filter((v) =>
     !q || `${v.id_interno} ${v.marca} ${v.modelo} ${v.anio}`.toLowerCase().includes(q)
@@ -30,7 +33,17 @@ export default function Inventario() {
 
   return (
     <div>
-      <h1 style={{ font: '400 26px Georgia, serif', margin: '0 0 16px' }}>Inventario</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
+        <h1 style={{ font: '400 26px Georgia, serif', margin: 0 }}>Inventario</h1>
+        {puedeCrear && (
+          <Link
+            to="/vehiculo/nuevo"
+            style={{ background: '#26302f', color: '#f3f1ec', padding: '7px 14px', fontSize: 12.5, textDecoration: 'none' }}
+          >
+            + Nueva unidad
+          </Link>
+        )}
+      </div>
 
       <input
         placeholder="Buscar por marca, modelo, año o folio…"
@@ -54,7 +67,7 @@ export default function Inventario() {
           </thead>
           <tbody>
             {filtrados.map((v) => (
-              <tr key={v.id} style={{ borderTop: '1px solid #f0ede6' }}>
+              <tr key={v.id} onClick={() => navigate(`/vehiculo/${v.id}`)} style={{ borderTop: '1px solid #f0ede6', cursor: 'pointer' }}>
                 <td style={{ padding: '10px' }}>{v.marca} {v.modelo} {v.anio} <span style={{ color: '#8b8578' }}>· {v.id_interno}</span></td>
                 <td style={{ padding: '10px' }}>{v.kilometraje?.toLocaleString('es-MX') ?? '—'} km</td>
                 <td style={{ padding: '10px' }}>{v.estado_comercial}</td>

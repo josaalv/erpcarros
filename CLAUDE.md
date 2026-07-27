@@ -20,13 +20,16 @@ Este proyecto tuvo **dos diseños distintos**:
    proceso de aprovisionar Hostinger (dominio, FTP, MySQL) primero.
 
 **El código de Laravel se eliminó del repo** (queda en el historial de git
-si hace falta consultarlo: `git log --diff-filter=D -- app/`). Los
-documentos en `docs/analisis-fuente/` siguen siendo la fuente de verdad
-para las **reglas de negocio y permisos** (RN-01 a RN-30, Tabla 2), pero
-su sección de "arquitectura técnica" (Laravel/Filament/Hostinger) y su
-esquema de base de datos (sintaxis MySQL) están **obsoletos** — no los
-seas fiel al pie de la letra en eso, la base real hoy es Postgres/Supabase
-y el esquema vive en `supabase/migrations/`.
+si hace falta consultarlo: `git log --diff-filter=D -- app/`).
+
+**`docs/analisis-fuente/` ya NO está en el repo** (se quitó porque el repo
+es público y esos documentos tenían cifras reales del negocio: márgenes
+por unidad, tabla de rentabilidad de las 14 unidades, criterio de compra).
+Si necesitas consultar las reglas de negocio completas (RN-01 a RN-30,
+Tabla 2 de permisos, mapa de procesos), pídeselas al usuario directamente
+o revisa el historial de git previo a su eliminación — **pero no las
+vuelvas a committear al repo público**. Este `CLAUDE.md` ya resume lo
+esencial de esas reglas en las secciones de abajo.
 
 ## Stack actual
 
@@ -96,14 +99,12 @@ todos sus proyectos con Supabase.
 
 ## Qué falta (no asumir que ya existe)
 
-- Solo están construidas 2 pantallas: Login/registro y Panel/Inventario
-  (`src/screens/`). Faltan: Expediente del vehículo, captura de gasto
-  (la pantalla que el análisis marca como más crítica, RN-01), Socios y
-  liquidación, Documentación, Taller, Consignación, Portal de
-  comisionista, Venta/cierre, Calculadora de puja. Ver el orden
-  recomendado de construcción en §18 de
-  `docs/analisis-fuente/03-analisis-reglas-permisos.txt` (la secuencia
-  de prioridad sigue siendo válida aunque la arquitectura cambió).
+- Pantallas construidas (`src/screens/`): Login/registro, Panel,
+  Inventario, Expediente del vehículo, alta de vehículo, captura de
+  gasto. Faltan: Socios y liquidación, Documentación, Taller,
+  Consignación, Portal de comisionista, Venta/cierre, Calculadora de
+  puja — construir en ese orden aproximado (protege capital antes que
+  comodidad, mismo criterio que el análisis original).
 - Tablas del diseño original **todavía no migradas a Postgres**:
   `proveedor`, `comisionista`, `cliente`, `prospecto`, `orden_trabajo`,
   `documento`, `media`, `consignacion`, `venta`, `comision`,

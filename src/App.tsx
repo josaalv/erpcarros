@@ -4,6 +4,8 @@ import Login from './screens/Login'
 import Layout from './screens/Layout'
 import Panel from './screens/Panel'
 import Inventario from './screens/Inventario'
+import VehiculoNuevo from './screens/VehiculoNuevo'
+import Expediente from './screens/Expediente'
 
 function Protegido({ children }: { children: React.ReactNode }) {
   const { session, cargando } = useAuth()
@@ -28,6 +30,8 @@ function Rutas() {
       >
         <Route index element={<Panel />} />
         <Route path="inventario" element={<Inventario />} />
+        <Route path="vehiculo/nuevo" element={<VehiculoNuevo />} />
+        <Route path="vehiculo/:id" element={<Expediente />} />
       </Route>
     </Routes>
   )
