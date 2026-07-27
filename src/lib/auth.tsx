@@ -66,7 +66,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signUp({
       email: correo,
       password,
-      options: { data: { nombre } },
+      options: {
+        data: { nombre },
+        // Sin esto, el link de confirmacion usa el "Site URL" configurado
+        // en el dashboard de Supabase (por default localhost:3000) y manda
+        // a los usuarios a una pagina rota. window.location.origin +
+        // pathname apunta siempre al sitio real desde donde se registraron.
+        emailRedirectTo: window.location.origin + window.location.pathname,
+      },
     })
     return error ? traducirError(error.message) : null
   }
