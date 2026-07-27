@@ -1,123 +1,92 @@
 # Despliegue — ERP Vehículos
 
-Adaptado del patrón ya probado en `robsen-salon` (ver
-`docs/kit-aterrizaje-referencia.md`), con los ajustes propios de esta app:
-es Laravel completo (backend + frontend compilado), no solo estáticos.
+**Nota:** este documento reemplaza una versión anterior escrita para
+Laravel + Hostinger. Ese plan se abandonó a mitad de la construcción — ver
+la sección "Historial de arquitectura" en `CLAUDE.md` antes de asumir que
+algo de Hostinger sigue aplicando.
 
-## Estado actual
+## Cómo funciona hoy
 
-**El workflow (`.github/workflows/deploy.yml`) todavía NO está activo.**
-Dispara solo manualmente (`workflow_dispatch`) a propósito, hasta completar
-el checklist de abajo. Actívalo cambiando el `on:` a `push: branches:
-[main]` solo después del paso 3.
+1. `git push` a `main` dispara `.github/workflows/deploy.yml`.
+2. `npm ci && npm run build` compila el frontend (React + Vite) con
+   `GITHUB_PAGES=true`, que hace que `vite.config.ts` use
+   `base: '/erpcarros/'` en vez de `/` (necesario porque GitHub Pages de
+   un repo de usuario sirve desde ese subpath).
+3. Las variables `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` se toman
+   de `.env.production`, **committeado al repo** — no son secreto: la
+   anon key de Supabase está diseñada para vivir en el cliente, la
+   protege RLS, no la oscuridad. Si algún día se necesita la
+   `service_role` key (nunca en el frontend), esa sí va a GitHub Secrets.
+4. `actions/upload-pages-artifact` + `actions/deploy-pages` publican
+   `./dist` a GitHub Pages.
+5. URL pública: **https://josaalv.github.io/erpcarros/**
 
-## Checklist antes de activar el deploy automático
+No hace falta ninguna cuenta de Hostinger, FTP, ni verificación manual de
+ruta para este flujo — a diferencia de `robsen-salon`, GitHub Pages no
+tiene el problema de "conector que reporta éxito pero escribe en el lugar
+equivocado" porque es la propia GitHub la que sirve los archivos.
 
-1. [ ] Dominio (aunque sea temporal de Hostinger) identificado.
-2. [ ] Cuenta FTP dedicada creada en Hostinger para ese dominio.
-3. [ ] **Verificación manual de la ruta FTP — obligatoria, no te la
-   saltes.** Conecta con `lftp` a mano usando las credenciales exactas que
-   usará el deploy, sube un archivo de nombre único (timestamp + random) y
-   pídelo por HTTP directo al dominio real. Si no aparece, la ruta está
-   mal — no automatices todavía. Ver la sección completa en
-   `docs/kit-aterrizaje-referencia.md` (es el mismo procedimiento que costó
-   horas diagnosticar en `robsen-salon` cuando `FTP-Deploy-Action` reportaba
-   éxito escribiendo en un directorio vacío y paralelo).
-4. [ ] Base de datos MySQL 8 creada en hPanel, con su propio usuario y
-   contraseña (no reutilizar credenciales de otro proyecto). Confirmar
-   versión con `SELECT VERSION();` — el esquema usa `CHECK`, `JSON` y
-   funciones de ventana, que requieren MySQL 8 real (no MariaDB, no MySQL
-   5.7).
-5. [ ] Secrets en GitHub → Settings → Secrets and variables → Actions:
-   `APP_KEY` (genera con `php artisan key:generate --show`),
-   `HOSTINGER_DB_HOST`, `HOSTINGER_DB_DATABASE`, `HOSTINGER_DB_USERNAME`,
-   `HOSTINGER_DB_PASSWORD`, `HOSTINGER_FTP_SERVER`,
-   `HOSTINGER_FTP_USERNAME`, `HOSTINGER_FTP_PASSWORD`.
-6. [ ] Backup de MySQL programado desde el día uno (mysqldump vía cron de
-   Hostinger o GitHub Actions con acceso a la base). No hay pipeline
-   automático de respaldo todavía — pendiente de construir.
+## Primera vez / si Pages no aparece activo
 
-## Pendiente de decidir: cómo correr las migraciones en producción
+`actions/deploy-pages` normalmente activa Pages solo en el primer run
+exitoso. Si el workflow corre pero la URL da 404:
 
-El workflow sube archivos por FTP, pero **no ejecuta
-`php artisan migrate --force`** contra la MySQL de Hostinger. Dos rutas
-posibles, dependiendo de qué incluya el plan de Hostinger:
+1. Ve a Settings → Pages del repo en GitHub.
+2. En "Build and deployment" → Source, confirma que dice **"GitHub
+   Actions"** (no "Deploy from a branch"). Si no, cámbialo — es un toggle
+   de un clic, no requiere tocar el workflow.
+3. Vuelve a correr el workflow (push vacío o `workflow_dispatch` desde la
+   pestaña Actions).
 
-- **Si el plan da acceso SSH:** agregar un paso al workflow que se
-  conecte por SSH y corra `php artisan migrate --force` después de subir
-  los archivos.
-- **Si no hay SSH:** correr las migraciones a mano vía el SQL Editor de
-  hPanel o `phpMyAdmin`, replicando el mismo orden de
-  `docs/analisis-fuente/01-esquema-base-datos.txt` §11. Esto es lo que
-  hacemos hoy en desarrollo local — ver más abajo.
+## Base de datos (Supabase)
 
-No asumas una respuesta: confírmalo contra el plan de Hostinger real antes
-de automatizar este paso.
+- Proyecto: **"Erp carros"** (`qiqowqakrarcqvxdiddm.supabase.co`), Postgres 17.
+- RLS real en todas las tablas, sin acceso abierto por `anon` key —
+  mismo estándar que `robsen-salon`.
+- Migraciones en `supabase/migrations/`, en orden — se aplican vía MCP de
+  Supabase (`apply_migration`) o el SQL Editor. No hay pipeline
+  automático que las corra en el deploy: si agregas una migración nueva,
+  aplícala a mano contra el proyecto antes o después de subir el código
+  que la usa, y guarda el archivo `.sql` en el repo para que quede
+  registrado (el MCP no lo hace solo).
+- Corre `get_advisors` (security y performance) después de cada
+  migración — ya encontró y se corrigieron problemas reales en
+  `002_endurecer_permisos_funciones.sql` y
+  `003_optimizaciones_indices_y_rls.sql`.
 
-## Riesgo conocido: triggers y `SUPER` privilege
+### Confirmación de correo en signups
 
-Al correr `php artisan migrate` localmente (MySQL 8 con binary log
-activado), crear los triggers de `trg_gasto_bloqueo_cierre` y afines
-falló con:
+Por default, Supabase Auth exige confirmar el correo antes de poder
+iniciar sesión. Para un equipo interno de 6 personas esto puede ser
+fricción innecesaria. Para desactivarlo: Supabase Dashboard →
+Authentication → Sign In / Providers → Email → desmarcar "Confirm email".
+Es un ajuste de la plataforma, no se puede cambiar por SQL/MCP.
 
-```
-SQLSTATE[HY000]: General error: 1419 You do not have the SUPER privilege
-and binary logging is enabled
-```
+## Verificación de cálculo financiero
 
-Se resolvió en local con `SET GLOBAL log_bin_trust_function_creators = 1;`
-como root. **En Hostinger es probable que el usuario de la base de datos
-NO tenga privilegio `SUPER`** (hosting compartido no lo da) y esa misma
-variable tampoco se pueda ajustar sin ese privilegio. Antes de dar por
-bueno el deploy a producción:
+Antes de dar por bueno un cambio al esquema, reproduce el caso Mirage
+2022 contra la vista `v_costo_vehiculo` y compara al peso:
 
-1. Confirma si Hostinger ya trae `log_bin_trust_function_creators=1` por
-   default (común en muchos hostings compartidos porque no exponen
-   binlog), o si hay que pedir soporte para activarlo.
-2. Si no se puede activar, los triggers habría que crearlos con
-   `DEFINER` explícito o replantear el bloqueo de cierre financiero como
-   validación en la aplicación (Eloquent) además de en la base de datos.
-   No lo asumas resuelto sin probarlo contra la base real de Hostinger.
+| Unidad      | costo_total | utilidad  | margen |
+|-------------|------------:|----------:|-------:|
+| Mirage 2022 |  142,580.00 | 37,420.00 | 0.2079 |
+
+Ya verificado en este proyecto de Supabase (`select ... from
+v_costo_vehiculo cv join vehiculo v on v.id=cv.vehiculo_id where
+v.id_interno='V-0142'`) — coincide exacto. Pendiente: Jetta 2018 e Hilux
+diésel 2020 (con reparto a dos socios) como casos de prueba adicionales.
 
 ## Desarrollo local
 
-Este sandbox corre MySQL 8.0.46 real (no MariaDB) para poder validar el
-esquema con fidelidad — ver `.env` para las credenciales de desarrollo
-(`erpcarros` / base `erpcarros`). Comandos típicos:
-
-```
-php artisan migrate:fresh --seed   # recrea todo el esquema + catálogos + admin
-php artisan tinker                 # probar modelos Eloquent
-php artisan test                   # suite de pruebas (permisos + cálculo financiero)
+```bash
+npm install
+cp .env.example .env
+# Rellena VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY
+npm run dev
 ```
 
-Las pruebas (`phpunit.xml`) corren contra una base MySQL separada
-(`erpcarros_test`, mismo usuario `erpcarros`) en vez de SQLite en memoria
-por default de Laravel — el esquema usa triggers, `CHECK` y funciones de
-ventana que SQLite no soporta igual. Requiere `ext-bcmath` instalado
-(usado en `Compra::costoAdquisicion()` y en las pruebas de cálculo
-financiero para evitar errores de punto flotante).
-
-Credenciales del usuario administrador sembrado por
-`UsuarioAdminSeeder`: `admin@erpcarros.test` / `cambia-esta-contrasena`
-— cámbiala antes de exponer el panel.
-
-## Verificación de cálculo financiero (obligatoria antes de construir pantallas)
-
-Antes de dar por bueno el esquema en cualquier entorno, reproduce las tres
-unidades reales ya cerradas y compara contra estos números exactos (ver
-`docs/analisis-fuente/01-esquema-base-datos.txt` §"Cómo comprobar que el
-esquema quedó bien"):
-
-| Unidad            | costo_total | utilidad   | margen |
-|-------------------|------------:|-----------:|-------:|
-| Mirage 2022       |  142,580.00 |  37,420.00 | 0.2079 |
-| Jetta 2018        |  204,330.00 |  10,670.00 | 0.0496 |
-| Hilux diesel 2020 |  344,860.00 | 105,140.00 | 0.2336 |
-
-El caso de Mirage 2022 ya se verificó en este entorno de desarrollo
-(dentro de una transacción `BEGIN`/`ROLLBACK`, sin dejar datos): la vista
-`v_costo_vehiculo` devolvió `costo_total = 142580.00`,
-`utilidad = 37420.00`, `margen = 0.2079` — exacto al peso. Faltan Jetta
-2018 e Hilux diésel 2020 (esta última con reparto a dos socios) antes de
-construir pantallas.
+**Nota sobre pruebas en sandbox:** si corres esto dentro de un entorno con
+proxy de red restrictivo (como el sandbox de Claude Code), el navegador
+headless puede no respetar `HTTPS_PROXY` automáticamente y las llamadas a
+Supabase se quedan colgadas sin error visible — no es un bug de la app.
+En un navegador real de usuario (sin proxy corporativo) esto no aplica.

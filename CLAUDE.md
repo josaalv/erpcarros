@@ -5,165 +5,131 @@ de activos con valor agregado: subasta → taller → venta, ciclo ~30 días,
 12 unidades activas, 6 usuarios). Este archivo es memoria persistente: se
 lee automáticamente al abrir el repo.
 
-**Antes de asumir cómo funciona algo, consulta `docs/`:**
+## ⚠️ Historial de arquitectura — leer antes de asumir nada
 
-- `docs/analisis-fuente/03-analisis-reglas-permisos.txt` — el documento
-  completo de análisis: hallazgos del negocio real, 30 reglas de negocio
-  (RN-01 a RN-30), matriz de permisos por rol, mapa de procesos, MVP y
-  fases, criterios de aceptación, plan de pruebas. **Es la fuente de
-  verdad de qué debe hacer el sistema.**
-- `docs/analisis-fuente/01-esquema-base-datos.txt` — el esquema MySQL
-  completo tal como se implementó: las 46 tablas, vistas, triggers,
-  semillas y el orden obligatorio de migraciones. Ya está implementado en
-  `database/migrations/` — si necesitas el diseño original, está aquí.
-- `docs/analisis-fuente/02-interfaz-frontend-prototipo.jsx` — el
-  prototipo navegable de frontend (React, 4 roles) que define el contrato
-  de UI: qué campos, qué filtros, qué ve cada rol. Úsalo como referencia
-  de UX al construir pantallas reales, no lo copies literal (es un mock
-  con datos ficticios y estilos inline).
-- `docs/DEPLOY.md` — flujo de despliegue a Hostinger, checklist pendiente,
-  y riesgos ya identificados (ver abajo).
-- `docs/kit-aterrizaje-referencia.md` — el kit genérico de arranque para
-  proyectos tipo CRM/ERP de este mismo desarrollador, con el playbook de
-  diagnóstico FTP aprendido en `robsen-salon`. Nota: ese kit asume PHP
-  puro por defecto, pero **este proyecto específico usa Laravel +
-  Filament** — decisión ya tomada y justificada en el análisis (ver
-  Tabla 4 de `03-analisis-reglas-permisos.txt`), no un olvido.
+Este proyecto tuvo **dos diseños distintos**:
 
-## Stack
+1. **Diseño original (documentado en `docs/analisis-fuente/`):** Laravel +
+   Filament + MySQL 8 en Hostinger. Justificado en el análisis de negocio
+   original por vivir en la infraestructura que el dueño ya paga.
+2. **Diseño actual (el que corre hoy):** React + TypeScript + Vite +
+   **Supabase** (Postgres + Auth + RLS), desplegado a **GitHub Pages**
+   como sitio estático. Se cambió a mitad de la implementación porque el
+   dueño ya tenía un proyecto de Supabase conectado y quería ver la
+   interfaz funcionando en un link real de GitHub sin pasar por el
+   proceso de aprovisionar Hostinger (dominio, FTP, MySQL) primero.
 
-- **Backend:** Laravel 13 (PHP 8.3+), plantillas de servidor +
-  interacciones ligeras (Livewire vía Filament).
-- **Panel administrativo:** Filament 3 — listados, filtros, formularios
-  sin construirlos desde cero. Ya instalado en `app/Providers/Filament/AdminPanelProvider.php`,
-  panel accesible en `/admin`. Faltan los `Resource` de cada entidad.
-- **Base de datos:** MySQL 8 en Hostinger (única base viva; ver
-  `docs/DEPLOY.md` para el esquema de respaldo). **No hay permisos a nivel
-  de base de datos** (a diferencia de Supabase/RLS): toda autorización por
-  rol vive en la aplicación. Esto es una decisión consciente documentada
-  en el análisis, con el costo explícito de que las pruebas negativas de
-  permisos son obligatorias, no opcionales (ver R10 y §17 del análisis).
-- **Autenticación:** modelo `App\Models\Usuario` sobre la tabla `usuario`
-  (no `users` de Laravel) — columnas en español (`correo`,
-  `password_hash`) según el esquema. `config/auth.php` ya apunta el
-  provider `users` a este modelo.
-- **Deploy:** GitHub Actions + `lftp mirror --reverse` a Hostinger, mismo
-  mecanismo verificado en `robsen-salon`. Ver `docs/DEPLOY.md` — **todavía
-  no está activo** (dispara manual hasta completar el checklist).
+**El código de Laravel se eliminó del repo** (queda en el historial de git
+si hace falta consultarlo: `git log --diff-filter=D -- app/`). Los
+documentos en `docs/analisis-fuente/` siguen siendo la fuente de verdad
+para las **reglas de negocio y permisos** (RN-01 a RN-30, Tabla 2), pero
+su sección de "arquitectura técnica" (Laravel/Filament/Hostinger) y su
+esquema de base de datos (sintaxis MySQL) están **obsoletos** — no los
+seas fiel al pie de la letra en eso, la base real hoy es Postgres/Supabase
+y el esquema vive en `supabase/migrations/`.
 
-## Base de datos — decisiones no negociables (del esquema original)
+## Stack actual
 
-- Importes en `DECIMAL(12,2)`. Nunca `FLOAT` ni `DOUBLE`.
-- Porcentajes en `DECIMAL(7,4)`, como fracción (0.2080 = 20.80%).
-- Ningún total calculable se almacena, salvo en `cierre_financiero` (se
-  congela a propósito tras el cierre).
+- **Frontend:** React 19 + TypeScript + Vite. Sin framework de backend
+  propio — es un sitio estático que habla directo con Supabase desde el
+  navegador (mismo patrón que `robsen-salon`).
+- **Backend:** Supabase — Postgres 17 + Auth + RLS real en cada tabla.
+  Toda la autorización por rol vive en políticas RLS de Postgres, **no**
+  en la aplicación (a diferencia del diseño Laravel original). Proyecto:
+  "Erp carros" (`qiqowqakrarcqvxdiddm.supabase.co`).
+- **Deploy:** GitHub Actions (`.github/workflows/deploy.yml`) build +
+  `actions/deploy-pages` → GitHub Pages. Dispara en cada push a `main`.
+  URL: `https://josaalv.github.io/erpcarros/`.
+- **Routing:** `HashRouter` (no `BrowserRouter`) a propósito — evita el
+  problema de rutas 404 en refresh que tiene GitHub Pages con rutas del
+  lado del cliente sin configurar un fallback 404.html.
+
+## Autenticación y bootstrap de administrador
+
+- Supabase Auth con correo/contraseña. Tabla `perfil` (1:1 con
+  `auth.users`, `id` = `auth.uid()`) guarda `nombre`, `rol`, `activo`.
+- **La primera cuenta que se registra se vuelve `admin` automáticamente**
+  vía el trigger `handle_new_user()` (`supabase/migrations/001_...sql`).
+  Las siguientes entran como `gerencia` por default.
+- Supabase pide confirmación de correo por default (`confirmation_sent_at`
+  se llena al registrarse). Si el equipo quiere signups sin fricción,
+  hay que desactivar "Confirm email" en Supabase Dashboard →
+  Authentication → Sign In / Providers → Email — **no hay forma de
+  cambiar ese ajuste vía SQL/MCP**, es config de la plataforma.
+
+## Base de datos — decisiones que sí se preservaron del diseño original
+
+- Importes en `numeric(12,2)`. Nunca `float`/`double`.
+- Porcentajes en `numeric(7,4)` como fracción (0.2080 = 20.80%).
 - El costo de adquisición (precio, comisión, impuestos, IVA) vive **solo**
-  en `compra`, nunca como `gasto`. Ver `v_costo_vehiculo`.
-- Nada se borra físicamente: borrado lógico (`deleted_at`, `deleted_by`,
-  `delete_motivo`) en toda tabla operativa — helper
-  `App\Support\SchemaHelpers::bloqueEstandar()` en las migraciones.
-- `es_demo` en toda tabla operativa: el perfil de demostración vive en el
-  mismo sistema con datos sembrados y escritura bloqueada en el servidor,
-  nunca en un entorno separado.
-- Los 4 catálogos (`estado_proceso`, `ubicacion`, `categoria_gasto`,
-  `tipo_documento`) son tablas, no `ENUM`: se configuran sin migración.
-- Los tres precios de un vehículo están separados: `precio_minimo`
-  (**solo admin, nunca sale de ese rol**), `precio_autorizado` (venta
-  directa) y `precio_lote` (asignado a consignación). No los confundas.
+  en `compra`, nunca como `gasto`. Ver vista `v_costo_vehiculo`.
+- RN-12: `precio_minimo` nunca sale del rol `admin` — se redacta con
+  `NULL` directo en la vista `v_vehiculo_ficha` (`case when es_admin()...`),
+  no en el cliente.
+- `es_demo` en las tablas operativas + policies RLS que exigen
+  `es_demo = es_demo_actual()`: un registro real y uno de demo nunca se
+  mezclan en una consulta, aplicado por Postgres, no por la app.
 
-## Estado del esquema
+## Estado del esquema Supabase
 
-Las migraciones en `database/migrations/` ya implementan el esquema
-completo (46 tablas + 4 vistas derivadas + 4 triggers de protección de
-cierre financiero), en el orden obligatorio de §11 del documento fuente.
-Verificado contra MySQL 8.0.46 real en este entorno de desarrollo — no
-contra SQLite ni MariaDB (el esquema usa `utf8mb4_0900_ai_ci`, `CHECK` y
-funciones de ventana que no son fieles en otros motores).
+`supabase/migrations/` tiene las migraciones ya aplicadas al proyecto real
+(no hay pipeline automático de aplicación — se aplican a mano vía MCP de
+Supabase o el SQL Editor, igual que en `robsen-salon`):
 
-**Ya verificado al peso:** el caso Mirage 2022 (`costo_total = 142,580.00`,
-`utilidad = 37,420.00`, `margen = 0.2079`) — ahora automatizado en
-`tests/Feature/CalculoFinancieroTest.php`, no solo probado a mano.
-**Pendiente:** Jetta 2018 e Hilux diésel 2020 (esta con reparto a dos
-socios) como casos de prueba adicionales — no des por bueno un cambio de
-esquema sin correr `php artisan test`, es la prueba más barata del
-proyecto (ver `docs/DEPLOY.md`).
+1. `001_esquema_inicial_y_rls.sql` — `perfil`, catálogos
+   (`estado_proceso`, `ubicacion`, `categoria_gasto`), `socio`, `vehiculo`,
+   `compra`, `gasto`, `aportacion`, vistas `v_costo_vehiculo` y
+   `v_vehiculo_ficha`, RLS en todo.
+2. `002_endurecer_permisos_funciones.sql` — revoca `EXECUTE` de `anon`
+   sobre las funciones `es_admin()`/etc. (hallazgo de `get_advisors`).
+3. `003_optimizaciones_indices_y_rls.sql` — índices de FK faltantes,
+   `auth.uid()` envuelto en `(select ...)`, policies duplicadas
+   colapsadas (hallazgos de `get_advisors` performance).
+4. `004_semillas_catalogos_y_demo.sql` — catálogos completos + 5 unidades
+   de demostración (`es_demo=true`) tomadas del prototipo de frontend.
 
-**Riesgo conocido sin resolver:** crear los triggers localmente requirió
-`SET GLOBAL log_bin_trust_function_creators = 1` porque MySQL exige
-privilegio `SUPER` para crear triggers con binlog activado. No se ha
-confirmado si el usuario de MySQL en Hostinger va a tener ese privilegio o
-esa variable ajustada — ver `docs/DEPLOY.md`.
-
-## Capa de autorización (ya implementada)
-
-- `permiso` y `rol_permiso` **ya están sembrados** por `PermisoSeeder`,
-  traduciendo la Tabla 2 (matriz de acceso) del análisis. El rol `admin`
-  NO tiene filas ahí a propósito — `Usuario::ambitoPara()` responde
-  `'todos'` para admin sin consultar la tabla (bypass explícito,
-  documentado en el propio método).
-- `Usuario::ambitoPara($recurso, $accion)` devuelve `'todos'` /
-  `'propios'` / `'ninguno'` consultando `rol_permiso`. `Usuario::puede()`
-  y `Usuario::soloPropios()` son atajos sobre ese método.
-- `Usuario::vePrecioMinimo()` y `Usuario::veCifrasFinancieras()` resuelven
-  la redacción de **campos** (RN-12, fila "Costo acumulado, utilidad,
-  margen" de la Tabla 2) — esto es independiente del ámbito por fila:
-  un campo financiero se oculta aunque el usuario sí pueda ver la fila.
-- `App\Models\Concerns\TieneBloqueEstandar` (usado por casi todos los
-  modelos operativos) aplica `EsDemoScope` automáticamente y **lanza
-  `RuntimeException` si el rol `demo` intenta escribir** (CA-14), como
-  segunda capa además de las Policies. **Excepción a propósito:**
-  `Usuario` NO usa este trait (riesgo de recursión vía `Auth::user()`
-  durante la propia autenticación — ver el comentario en el modelo).
-- Policies ya construidas como patrón de referencia:
-  `VehiculoPolicy`, `GastoPolicy` (ámbito simple), `ProspectoPolicy`,
-  `ComisionPolicy` (ámbito `'propios'` real, contra `comisionista_id`).
-  **Faltan las del resto de recursos** — replica el mismo patrón
-  (`$usuario->ambitoPara($recurso, $accion)` + `match` sobre
-  `todos`/`propios`/`ninguno`), no reinventes el mecanismo.
-- `tests/Feature/AutorizacionPermisosTest.php` automatiza las pruebas
-  negativas más críticas de §17 (gerencia sin costos, comisionista sin
-  precio mínimo ni prospectos ajenos, demo sin escritura, usuario
-  desactivado sin permisos, admin con acceso total). **Ejecuta este
-  archivo después de cualquier cambio a permisos/roles** —
-  `php artisan test --filter=AutorizacionPermisosTest`.
+**Ya verificado al peso dos veces** (MySQL y ahora Postgres): Mirage 2022
+reproduce `costo_total = 142,580.00` vía `v_costo_vehiculo` en ambos
+motores. Antes de cualquier cambio de esquema, corre
+`get_advisors` (security) — es la convención de este desarrollador en
+todos sus proyectos con Supabase.
 
 ## Qué falta (no asumir que ya existe)
 
-- Ningún `Filament\Resource` está construido todavía. El orden recomendado
-  de construcción está en §18 del documento de análisis: sesión/roles →
-  vehículo/expediente → gastos con foto → socios/liquidación →
-  documentación → taller/proveedores → consignación/portal comisionista →
-  venta/cierre → calculadora de puja (al final, necesita histórico de
-  ROI) → paneles/demo/respaldos. Cuando construyas los Resources, la
-  redacción de campos financieros (`vePrecioMinimo()`,
-  `veCifrasFinancieras()`) debe aplicarse ahí con `visible()`/`hidden()`
-  a nivel de servidor (Filament evalúa esas closures en el backend, no
-  en el navegador) — nunca ocultar solo con CSS/JS.
-- Servicios de dominio pendientes (mencionados como comentario en los
-  modelos correspondientes): `VentaService` (RN-19, toma a cuenta genera
-  unidad nueva), `CierreService` (RN-08, RN-20, RN-21: validar gastos
-  pendientes antes de liquidar, congelar cierre, manejar reapertura).
-  `App\Services\GastoService` ya existe como ejemplo del patrón (RN-01,
-  gasto + aportación en una sola transacción cuando paga un socio).
-- Tareas programadas pendientes: liberar apartados vencidos a 30 días
-  (RN-17) y liberar atribución de prospecto a 15 días (RN-13) — hoy no
-  hay ningún `Schedule::` configurado.
-- El workflow de deploy existe pero no corre migraciones contra Hostinger
-  todavía (falta decidir SSH vs. manual — ver `docs/DEPLOY.md`).
-- `ext-bcmath` es requerido (`composer.json` ya lo declara) — confirma que
-  el hosting de Hostinger lo trae habilitado antes de desplegar.
+- Solo están construidas 2 pantallas: Login/registro y Panel/Inventario
+  (`src/screens/`). Faltan: Expediente del vehículo, captura de gasto
+  (la pantalla que el análisis marca como más crítica, RN-01), Socios y
+  liquidación, Documentación, Taller, Consignación, Portal de
+  comisionista, Venta/cierre, Calculadora de puja. Ver el orden
+  recomendado de construcción en §18 de
+  `docs/analisis-fuente/03-analisis-reglas-permisos.txt` (la secuencia
+  de prioridad sigue siendo válida aunque la arquitectura cambió).
+- Tablas del diseño original **todavía no migradas a Postgres**:
+  `proveedor`, `comisionista`, `cliente`, `prospecto`, `orden_trabajo`,
+  `documento`, `media`, `consignacion`, `venta`, `comision`,
+  `cierre_financiero`, `liquidacion`, etc. Solo se tradujo el núcleo
+  mínimo (vehículo, compra, gasto, socio, aportación) para tener algo
+  funcional rápido — bastante lejos de las 46 tablas del diseño original.
+- Sin pruebas automatizadas todavía (el diseño Laravel sí las tenía —
+  `AutorizacionPermisosTest`/`CalculoFinancieroTest` — pero se
+  descartaron con el resto del código PHP). Replicar el mismo espíritu
+  con Postgres: pruebas negativas de RLS por rol.
+- El workflow de deploy no corre migraciones de Supabase — esas se
+  aplican a mano vía MCP, igual que en `robsen-salon`.
 
 ## Convenciones de este proyecto
 
 - Todo el texto de UI en español (México).
-- Reglas de negocio RN-01 a RN-30: no las reinventes, ya están numeradas
-  en el análisis — referencia la regla por su ID en commits/PRs cuando
-  aplique.
-- **Los permisos se validan en el servidor, nunca solo ocultando un botón
-  en la interfaz** (regla de oro del análisis, §6). Un campo financiero
-  que el rol no permite ni debe llegar en la respuesta al cliente.
-- Verificar en base real (MySQL) con transacciones de prueba
-  (`BEGIN`/`ROLLBACK`) antes de dar un fix por bueno, igual que en
-  `robsen-salon`.
+- Reglas de negocio RN-01 a RN-30 siguen siendo la referencia para
+  comportamiento esperado, aunque el mecanismo de aplicación cambió de
+  "Policy de Laravel" a "policy de RLS".
+- **Los permisos se validan en la base de datos (RLS), nunca solo
+  ocultando un botón en la interfaz.** Un campo financiero que el rol no
+  permite se redacta en la vista de Postgres, no en el componente React.
+- Antes de cualquier cambio de esquema, correr `get_advisors` (security)
+  después de aplicar la migración.
+- Verificar en base real con transacciones de prueba cuando aplique, y
+  guardar cada migración aplicada vía MCP también como archivo en
+  `supabase/migrations/` — el MCP no lo hace solo.
 - Cambios de código van por PR (confirmar con el usuario antes de push
   directo a `main`).

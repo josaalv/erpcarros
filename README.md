@@ -2,37 +2,29 @@
 
 ERP interno para un negocio de compra, reparación y venta de vehículos
 (arbitraje de activos: subasta → taller → venta). Ver `CLAUDE.md` para la
-guía operativa completa y `docs/` para el análisis de negocio y el
-esquema de base de datos originales.
+guía operativa completa y `docs/` para el análisis de negocio original.
 
 ## Stack
 
-- Laravel 13 (PHP 8.3+) + Filament 3 (panel administrativo)
-- MySQL 8 (Hostinger en producción)
-- Vite + Tailwind para el panel
+- React 19 + TypeScript + Vite
+- Supabase (Postgres + Auth + RLS) como único backend — sin servidor propio
+- Deploy: GitHub Pages (build estático que habla directo con Supabase)
 
 ## Desarrollo local
 
-Requiere PHP 8.3+, Composer, Node 20+ y MySQL 8 corriendo localmente.
-
 ```bash
-composer install
-cp .env.example .env
-php artisan key:generate
-# Ajusta DB_* en .env con tus credenciales de MySQL local
-php artisan migrate:fresh --seed
 npm install
+cp .env.example .env
+# Rellena VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY (Supabase → Project Settings → API)
 npm run dev
 ```
 
-El seeder crea los catálogos base y un usuario administrador:
-`admin@erpcarros.test` / `cambia-esta-contrasena` (cámbiala antes de
-exponer el panel). Panel en `http://localhost:8000/admin`.
+La primera cuenta que se registra en la pantalla de login se vuelve
+administrador automáticamente (ver función `handle_new_user` en
+`supabase/migrations/`).
 
 ## Documentación
 
 - `docs/analisis-fuente/` — documento de análisis de negocio (reglas
-  RN-01..RN-30, permisos, MVP), esquema de base de datos original, y
-  prototipo de frontend navegable.
-- `docs/DEPLOY.md` — flujo de despliegue a Hostinger y checklist
-  pendiente antes de activarlo.
+  RN-01..RN-30, permisos, MVP) y el prototipo de frontend original.
+- `docs/DEPLOY.md` — flujo de despliegue a GitHub Pages.

@@ -1,74 +1,48 @@
-name: Deploy a Hostinger
+name: Deploy a GitHub Pages
 
-# NOTA: disparo manual (workflow_dispatch) hasta completar el checklist de
-# docs/DEPLOY.md — sobre todo la verificacion manual de la ruta FTP con
-# lftp a mano (archivo unico + curl). Cuando ese paso este confirmado y los
-# secrets existan en GitHub, cambia esto a:
-#   on:
-#     push:
-#       branches: [main]
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          tools: composer:v2
-
-      - name: Instalar dependencias de PHP (sin dev)
-        run: composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction
-
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with:
+          node-version: 20
+          cache: npm
 
       - run: npm ci
+
       - run: npm run build
-
-      - name: Generar .env de produccion desde secrets
         env:
-          APP_KEY: ${{ secrets.APP_KEY }}
-          DB_HOST: ${{ secrets.HOSTINGER_DB_HOST }}
-          DB_DATABASE: ${{ secrets.HOSTINGER_DB_DATABASE }}
-          DB_USERNAME: ${{ secrets.HOSTINGER_DB_USERNAME }}
-          DB_PASSWORD: ${{ secrets.HOSTINGER_DB_PASSWORD }}
-        run: |
-          cp .env.example .env
-          php -r '
-            $env = file_get_contents(".env");
-            $env = preg_replace("/^APP_ENV=.*/m", "APP_ENV=production", $env);
-            $env = preg_replace("/^APP_DEBUG=.*/m", "APP_DEBUG=false", $env);
-            $env = preg_replace("/^APP_KEY=.*/m", "APP_KEY=" . getenv("APP_KEY"), $env);
-            $env = preg_replace("/^DB_HOST=.*/m", "DB_HOST=" . getenv("DB_HOST"), $env);
-            $env = preg_replace("/^DB_DATABASE=.*/m", "DB_DATABASE=" . getenv("DB_DATABASE"), $env);
-            $env = preg_replace("/^DB_USERNAME=.*/m", "DB_USERNAME=" . getenv("DB_USERNAME"), $env);
-            $env = preg_replace("/^DB_PASSWORD=.*/m", "DB_PASSWORD=" . getenv("DB_PASSWORD"), $env);
-            file_put_contents(".env", $env);
-          '
+          GITHUB_PAGES: 'true'
 
-      - name: Instalar lftp
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+      - uses: actions/configure-pages@v5
 
-      - name: Subir a Hostinger por FTP (lftp mirror)
-        env:
-          FTP_SERVER: ${{ secrets.HOSTINGER_FTP_SERVER }}
-          FTP_USER: ${{ secrets.HOSTINGER_FTP_USERNAME }}
-          FTP_PASS: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
-        run: |
-          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" <<'EOF'
-          set ssl:verify-certificate no
-          set ftp:ssl-allow no
-          set net:timeout 20
-          set net:max-retries 2
-          mirror --reverse --verbose --exclude-glob .git* --exclude tests/ . ./
-          bye
-          EOF
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
 
-    # Pendiente de decidir (ver CLAUDE.md): como correr
-    # `php artisan migrate --force` contra la MySQL de Hostinger despues de
-    # subir archivos. Depende de si el plan de Hostinger da acceso SSH.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
