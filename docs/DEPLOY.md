@@ -88,7 +88,15 @@ esquema con fidelidad — ver `.env` para las credenciales de desarrollo
 ```
 php artisan migrate:fresh --seed   # recrea todo el esquema + catálogos + admin
 php artisan tinker                 # probar modelos Eloquent
+php artisan test                   # suite de pruebas (permisos + cálculo financiero)
 ```
+
+Las pruebas (`phpunit.xml`) corren contra una base MySQL separada
+(`erpcarros_test`, mismo usuario `erpcarros`) en vez de SQLite en memoria
+por default de Laravel — el esquema usa triggers, `CHECK` y funciones de
+ventana que SQLite no soporta igual. Requiere `ext-bcmath` instalado
+(usado en `Compra::costoAdquisicion()` y en las pruebas de cálculo
+financiero para evitar errores de punto flotante).
 
 Credenciales del usuario administrador sembrado por
 `UsuarioAdminSeeder`: `admin@erpcarros.test` / `cambia-esta-contrasena`

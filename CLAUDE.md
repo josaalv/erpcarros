@@ -81,11 +81,12 @@ contra SQLite ni MariaDB (el esquema usa `utf8mb4_0900_ai_ci`, `CHECK` y
 funciones de ventana que no son fieles en otros motores).
 
 **Ya verificado al peso:** el caso Mirage 2022 (`costo_total = 142,580.00`,
-`utilidad = 37,420.00`, `margen = 0.2079`) reproducido en una transacción
-`BEGIN`/`ROLLBACK` contra `v_costo_vehiculo`. **Pendiente:** Jetta 2018 e
-Hilux diésel 2020 (esta con reparto a dos socios) — no des por bueno un
-cambio de esquema sin repetir esta prueba, es la más barata del proyecto
-(ver `docs/DEPLOY.md`).
+`utilidad = 37,420.00`, `margen = 0.2079`) — ahora automatizado en
+`tests/Feature/CalculoFinancieroTest.php`, no solo probado a mano.
+**Pendiente:** Jetta 2018 e Hilux diésel 2020 (esta con reparto a dos
+socios) como casos de prueba adicionales — no des por bueno un cambio de
+esquema sin correr `php artisan test`, es la prueba más barata del
+proyecto (ver `docs/DEPLOY.md`).
 
 **Riesgo conocido sin resolver:** crear los triggers localmente requirió
 `SET GLOBAL log_bin_trust_function_creators = 1` porque MySQL exige
@@ -93,20 +94,64 @@ privilegio `SUPER` para crear triggers con binlog activado. No se ha
 confirmado si el usuario de MySQL en Hostinger va a tener ese privilegio o
 esa variable ajustada — ver `docs/DEPLOY.md`.
 
+## Capa de autorización (ya implementada)
+
+- `permiso` y `rol_permiso` **ya están sembrados** por `PermisoSeeder`,
+  traduciendo la Tabla 2 (matriz de acceso) del análisis. El rol `admin`
+  NO tiene filas ahí a propósito — `Usuario::ambitoPara()` responde
+  `'todos'` para admin sin consultar la tabla (bypass explícito,
+  documentado en el propio método).
+- `Usuario::ambitoPara($recurso, $accion)` devuelve `'todos'` /
+  `'propios'` / `'ninguno'` consultando `rol_permiso`. `Usuario::puede()`
+  y `Usuario::soloPropios()` son atajos sobre ese método.
+- `Usuario::vePrecioMinimo()` y `Usuario::veCifrasFinancieras()` resuelven
+  la redacción de **campos** (RN-12, fila "Costo acumulado, utilidad,
+  margen" de la Tabla 2) — esto es independiente del ámbito por fila:
+  un campo financiero se oculta aunque el usuario sí pueda ver la fila.
+- `App\Models\Concerns\TieneBloqueEstandar` (usado por casi todos los
+  modelos operativos) aplica `EsDemoScope` automáticamente y **lanza
+  `RuntimeException` si el rol `demo` intenta escribir** (CA-14), como
+  segunda capa además de las Policies. **Excepción a propósito:**
+  `Usuario` NO usa este trait (riesgo de recursión vía `Auth::user()`
+  durante la propia autenticación — ver el comentario en el modelo).
+- Policies ya construidas como patrón de referencia:
+  `VehiculoPolicy`, `GastoPolicy` (ámbito simple), `ProspectoPolicy`,
+  `ComisionPolicy` (ámbito `'propios'` real, contra `comisionista_id`).
+  **Faltan las del resto de recursos** — replica el mismo patrón
+  (`$usuario->ambitoPara($recurso, $accion)` + `match` sobre
+  `todos`/`propios`/`ninguno`), no reinventes el mecanismo.
+- `tests/Feature/AutorizacionPermisosTest.php` automatiza las pruebas
+  negativas más críticas de §17 (gerencia sin costos, comisionista sin
+  precio mínimo ni prospectos ajenos, demo sin escritura, usuario
+  desactivado sin permisos, admin con acceso total). **Ejecuta este
+  archivo después de cualquier cambio a permisos/roles** —
+  `php artisan test --filter=AutorizacionPermisosTest`.
+
 ## Qué falta (no asumir que ya existe)
 
-- `permiso` y `rol_permiso` están creados como tablas pero **sin datos
-  sembrados**: traducir la Tabla 2 (matriz de acceso) del análisis a filas
-  concretas de `recurso`/`accion`/`ambito` es trabajo pendiente, no un
-  descuido.
 - Ningún `Filament\Resource` está construido todavía. El orden recomendado
   de construcción está en §18 del documento de análisis: sesión/roles →
   vehículo/expediente → gastos con foto → socios/liquidación →
   documentación → taller/proveedores → consignación/portal comisionista →
   venta/cierre → calculadora de puja (al final, necesita histórico de
-  ROI) → paneles/demo/respaldos.
+  ROI) → paneles/demo/respaldos. Cuando construyas los Resources, la
+  redacción de campos financieros (`vePrecioMinimo()`,
+  `veCifrasFinancieras()`) debe aplicarse ahí con `visible()`/`hidden()`
+  a nivel de servidor (Filament evalúa esas closures en el backend, no
+  en el navegador) — nunca ocultar solo con CSS/JS.
+- Servicios de dominio pendientes (mencionados como comentario en los
+  modelos correspondientes): `VentaService` (RN-19, toma a cuenta genera
+  unidad nueva), `CierreService` (RN-08, RN-20, RN-21: validar gastos
+  pendientes antes de liquidar, congelar cierre, manejar reapertura).
+  `App\Services\GastoService` ya existe como ejemplo del patrón (RN-01,
+  gasto + aportación en una sola transacción cuando paga un socio).
+- Tareas programadas pendientes: liberar apartados vencidos a 30 días
+  (RN-17) y liberar atribución de prospecto a 15 días (RN-13) — hoy no
+  hay ningún `Schedule::` configurado.
 - El workflow de deploy existe pero no corre migraciones contra Hostinger
   todavía (falta decidir SSH vs. manual — ver `docs/DEPLOY.md`).
+- `ext-bcmath` es requerido (`composer.json` ya lo declara) — confirma que
+  el hosting de Hostinger lo trae habilitado antes de desplegar.
 
 ## Convenciones de este proyecto
 
