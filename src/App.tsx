@@ -6,6 +6,7 @@ import Panel from './screens/Panel'
 import Inventario from './screens/Inventario'
 import VehiculoNuevo from './screens/VehiculoNuevo'
 import Expediente from './screens/Expediente'
+import Usuarios from './screens/Usuarios'
 
 function Protegido({ children }: { children: React.ReactNode }) {
   const { session, cargando } = useAuth()
@@ -32,6 +33,7 @@ function Rutas() {
         <Route path="inventario" element={<Inventario />} />
         <Route path="vehiculo/nuevo" element={<VehiculoNuevo />} />
         <Route path="vehiculo/:id" element={<Expediente />} />
+        <Route path="usuarios" element={<Usuarios />} />
       </Route>
     </Routes>
   )

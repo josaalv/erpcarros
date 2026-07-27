@@ -4,18 +4,19 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
 import { mxn, porcentaje } from '../lib/helpers'
-import type { VehiculoFicha, Gasto } from '../types'
+import type { VehiculoFicha, Gasto, EstadoProceso, Ubicacion } from '../types'
 
 export default function Expediente() {
   const { id } = useParams()
   const { perfil } = useAuth()
-  const { categorias } = useCatalogos()
+  const { categorias, estados, ubicaciones } = useCatalogos()
   const [veh, setVeh] = useState<VehiculoFicha | null>(null)
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [cargando, setCargando] = useState(true)
   const [abrirForm, setAbrirForm] = useState(false)
 
   const puedeCapturarGasto = perfil?.rol === 'admin'
+  const puedeEditarEstado = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
 
   async function recargar() {
     if (!supabase || !id) return
@@ -62,6 +63,10 @@ export default function Expediente() {
         </div>
       )}
 
+      {puedeEditarEstado && (
+        <EstadoEditor veh={veh} estados={estados} ubicaciones={ubicaciones} onGuardado={recargar} />
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid #26302f', paddingBottom: 8, marginBottom: 4 }}>
         <h2 style={{ font: '500 15px "IBM Plex Sans"', margin: 0 }}>Gastos</h2>
         {puedeCapturarGasto && (
@@ -103,6 +108,91 @@ export default function Expediente() {
     </div>
   )
 }
+
+const COMERCIAL_OPCIONES = ['no_publicado', 'publicado', 'en_consignacion', 'con_referidos', 'apartado', 'vendido']
+const DOCUMENTAL_OPCIONES = ['incompleto', 'en_tramite', 'completo']
+
+/**
+ * Cambiar estado/ubicación/estado comercial y documental de la unidad
+ * conforme avanza el ciclo compra → taller → venta. Sin esto el
+ * expediente es de solo lectura y el sistema no sirve para operar.
+ */
+function EstadoEditor({ veh, estados, ubicaciones, onGuardado }: {
+  veh: VehiculoFicha
+  estados: EstadoProceso[]
+  ubicaciones: Ubicacion[]
+  onGuardado: () => void
+}) {
+  const [estadoProcesoId, setEstadoProcesoId] = useState(String(veh.estado_proceso_id))
+  const [ubicacionId, setUbicacionId] = useState(String(veh.ubicacion_id))
+  const [estadoComercial, setEstadoComercial] = useState(veh.estado_comercial)
+  const [estadoDocumental, setEstadoDocumental] = useState(veh.estado_documental)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [ok, setOk] = useState(false)
+
+  const huboCambios = String(veh.estado_proceso_id) !== estadoProcesoId
+    || String(veh.ubicacion_id) !== ubicacionId
+    || veh.estado_comercial !== estadoComercial
+    || veh.estado_documental !== estadoDocumental
+
+  async function guardar() {
+    if (!supabase) return
+    setGuardando(true)
+    setError(null)
+    setOk(false)
+
+    const { error } = await supabase.from('vehiculo').update({
+      estado_proceso_id: Number(estadoProcesoId),
+      ubicacion_id: Number(ubicacionId),
+      estado_comercial: estadoComercial,
+      estado_documental: estadoDocumental,
+    }).eq('id', veh.id)
+
+    setGuardando(false)
+    if (error) { setError(error.message); return }
+    setOk(true)
+    onGuardado()
+  }
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e4e0d8', padding: 14, marginBottom: 24 }}>
+      <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8b8578', marginBottom: 10 }}>
+        Estado de la unidad
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+        <select value={estadoProcesoId} onChange={(e) => setEstadoProcesoId(e.target.value)} style={selectStyle}>
+          {estados.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+        </select>
+        <select value={ubicacionId} onChange={(e) => setUbicacionId(e.target.value)} style={selectStyle}>
+          {ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+        </select>
+        <select value={estadoComercial} onChange={(e) => setEstadoComercial(e.target.value)} style={selectStyle}>
+          {COMERCIAL_OPCIONES.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <select value={estadoDocumental} onChange={(e) => setEstadoDocumental(e.target.value)} style={selectStyle}>
+          {DOCUMENTAL_OPCIONES.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          onClick={guardar}
+          disabled={!huboCambios || guardando}
+          style={{
+            padding: '7px 14px', fontSize: 12, border: 'none', cursor: huboCambios ? 'pointer' : 'default',
+            background: huboCambios ? '#26302f' : '#e8e4dc', color: huboCambios ? '#f3f1ec' : '#a09889',
+          }}
+        >
+          {guardando ? 'Guardando…' : 'Guardar cambios'}
+        </button>
+        {ok && !huboCambios && <span style={{ fontSize: 11.5, color: 'oklch(0.45 0.09 150)' }}>Guardado ✓</span>}
+        {error && <span style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</span>}
+      </div>
+    </div>
+  )
+}
+
+const selectStyle: React.CSSProperties = { padding: '7px 8px', border: '1px solid #ddd8d0', fontSize: 12.5, fontFamily: 'inherit' }
 
 function Dato({ label, value }: { label: string; value: string }) {
   return (

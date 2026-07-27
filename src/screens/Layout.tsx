@@ -3,12 +3,13 @@ import { useAuth } from '../lib/auth'
 import { ROL_LABEL } from '../lib/helpers'
 
 const NAV = [
-  { to: '/', label: 'Panel', fin: false },
-  { to: '/inventario', label: 'Inventario', fin: false },
+  { to: '/', label: 'Panel' },
+  { to: '/inventario', label: 'Inventario' },
 ]
 
 export default function Layout() {
   const { perfil, signOut } = useAuth()
+  const nav = perfil?.rol === 'admin' ? [...NAV, { to: '/usuarios', label: 'Usuarios' }] : NAV
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: '"IBM Plex Sans", system-ui, sans-serif' }}>
@@ -24,7 +25,7 @@ export default function Layout() {
         )}
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

@@ -100,11 +100,14 @@ todos sus proyectos con Supabase.
 ## Qué falta (no asumir que ya existe)
 
 - Pantallas construidas (`src/screens/`): Login/registro, Panel,
-  Inventario, Expediente del vehículo, alta de vehículo, captura de
-  gasto. Faltan: Socios y liquidación, Documentación, Taller,
-  Consignación, Portal de comisionista, Venta/cierre, Calculadora de
-  puja — construir en ese orden aproximado (protege capital antes que
-  comodidad, mismo criterio que el análisis original).
+  Inventario, Expediente del vehículo (con edición de estado/ubicación),
+  alta de vehículo, captura de gasto, administración de usuarios (admin
+  cambia rol/activo de cada perfil — necesario porque todo el que se
+  registra entra como `gerencia` por default). Faltan: Socios y
+  liquidación, Documentación, Taller, Consignación, Portal de
+  comisionista, Venta/cierre, Calculadora de puja — construir en ese
+  orden aproximado (protege capital antes que comodidad, mismo criterio
+  que el análisis original).
 - Tablas del diseño original **todavía no migradas a Postgres**:
   `proveedor`, `comisionista`, `cliente`, `prospecto`, `orden_trabajo`,
   `documento`, `media`, `consignacion`, `venta`, `comision`,
