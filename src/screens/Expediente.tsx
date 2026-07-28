@@ -4,12 +4,12 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
 import { mxn, porcentaje } from '../lib/helpers'
-import type { VehiculoFicha, Gasto, EstadoProceso, Ubicacion, TipoDocumento, Documento } from '../types'
+import type { VehiculoFicha, Gasto, TipoDocumento, Documento } from '../types'
 
 export default function Expediente() {
   const { id } = useParams()
   const { perfil } = useAuth()
-  const { categorias, estados, ubicaciones } = useCatalogos()
+  const { categorias } = useCatalogos()
   const [veh, setVeh] = useState<VehiculoFicha | null>(null)
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [tiposDocumento, setTiposDocumento] = useState<TipoDocumento[]>([])
@@ -71,7 +71,7 @@ export default function Expediente() {
       )}
 
       {puedeEditarEstado && (
-        <EstadoEditor veh={veh} estados={estados} ubicaciones={ubicaciones} onGuardado={recargar} />
+        <EstadoEditor veh={veh} onGuardado={recargar} />
       )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid #26302f', paddingBottom: 8, marginBottom: 4 }}>
@@ -207,28 +207,22 @@ const COMERCIAL_OPCIONES = ['no_publicado', 'publicado', 'en_consignacion', 'con
 const DOCUMENTAL_OPCIONES = ['incompleto', 'en_tramite', 'completo']
 
 /**
- * Cambiar estado/ubicación/estado comercial y documental de la unidad
- * conforme avanza el ciclo compra → taller → venta. Sin esto el
- * expediente es de solo lectura y el sistema no sirve para operar.
+ * Cambiar estado comercial y documental de esta unidad. estado_proceso y
+ * ubicación NO se editan aquí — se administran para todas las unidades a
+ * la vez desde "En proceso" / "En venta", donde tiene más sentido verlas
+ * en conjunto que unidad por unidad.
  */
-function EstadoEditor({ veh, estados, ubicaciones, onGuardado }: {
+function EstadoEditor({ veh, onGuardado }: {
   veh: VehiculoFicha
-  estados: EstadoProceso[]
-  ubicaciones: Ubicacion[]
   onGuardado: () => void
 }) {
-  const [estadoProcesoId, setEstadoProcesoId] = useState(String(veh.estado_proceso_id))
-  const [ubicacionId, setUbicacionId] = useState(String(veh.ubicacion_id))
   const [estadoComercial, setEstadoComercial] = useState(veh.estado_comercial)
   const [estadoDocumental, setEstadoDocumental] = useState(veh.estado_documental)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
 
-  const huboCambios = String(veh.estado_proceso_id) !== estadoProcesoId
-    || String(veh.ubicacion_id) !== ubicacionId
-    || veh.estado_comercial !== estadoComercial
-    || veh.estado_documental !== estadoDocumental
+  const huboCambios = veh.estado_comercial !== estadoComercial || veh.estado_documental !== estadoDocumental
 
   async function guardar() {
     if (!supabase) return
@@ -237,8 +231,6 @@ function EstadoEditor({ veh, estados, ubicaciones, onGuardado }: {
     setOk(false)
 
     const { error } = await supabase.from('vehiculo').update({
-      estado_proceso_id: Number(estadoProcesoId),
-      ubicacion_id: Number(ubicacionId),
       estado_comercial: estadoComercial,
       estado_documental: estadoDocumental,
     }).eq('id', veh.id)
@@ -252,15 +244,9 @@ function EstadoEditor({ veh, estados, ubicaciones, onGuardado }: {
   return (
     <div style={{ background: '#fff', border: '1px solid #e4e0d8', padding: 14, marginBottom: 24 }}>
       <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8b8578', marginBottom: 10 }}>
-        Estado de la unidad
+        Estado comercial y documental
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
-        <select value={estadoProcesoId} onChange={(e) => setEstadoProcesoId(e.target.value)} style={selectStyle}>
-          {estados.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-        </select>
-        <select value={ubicacionId} onChange={(e) => setUbicacionId(e.target.value)} style={selectStyle}>
-          {ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
-        </select>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 10 }}>
         <select value={estadoComercial} onChange={(e) => setEstadoComercial(e.target.value)} style={selectStyle}>
           {COMERCIAL_OPCIONES.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>

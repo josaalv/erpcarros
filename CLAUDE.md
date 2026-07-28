@@ -115,14 +115,32 @@ todos sus proyectos con Supabase.
 ## Qué falta (no asumir que ya existe)
 
 - Pantallas construidas (`src/screens/`): Login/registro, Panel,
-  Inventario, Expediente del vehículo (con edición de estado/ubicación,
-  checklist de documentación), alta de vehículo, captura de gasto,
-  administración de usuarios, Socios y liquidación, Taller (kanban de
-  órdenes de trabajo), Consignación (lotes), Portal de comisionista
-  (Catálogo / Mis referidos / Mis comisiones), Ventas y cierre financiero
-  (registrar venta → cerrar financiero → genera `liquidacion` por socio
-  vía `v_participacion_socio`), Calculadora de puja (techo de puja + ROI
-  proyectado contra `v_roi_segmento`).
+  Inventario (catálogo/búsqueda), Expediente del vehículo (estado
+  comercial/documental, checklist de documentación), alta de vehículo,
+  captura de gasto, administración de usuarios, En proceso, En venta,
+  Socios y liquidación, Taller (kanban de órdenes de trabajo),
+  Consignación (lotes), Portal de comisionista (Catálogo / Mis referidos /
+  Mis comisiones), Ventas y cierre financiero (registrar venta → cerrar
+  financiero → genera `liquidacion` por socio vía `v_participacion_socio`),
+  Calculadora de puja (techo de puja + ROI proyectado contra
+  `v_roi_segmento`).
+- **`estado_proceso` y `ubicación` NO se piden en el alta** (`VehiculoNuevo`):
+  una unidad se registra una sola vez, pero su etapa y ubicación cambian
+  todo el tiempo mientras se prepara y se vende — pedirlas en el alta las
+  deja obsoletas al día siguiente. El alta las arranca en un default fijo
+  (clave `comprado` / `traslado`) y de ahí en adelante se administran para
+  TODAS las unidades a la vez desde dos pantallas separadas por la etapa
+  del catálogo `estado_proceso.orden` (umbral: la etapa `listo`):
+  - `En proceso` (`src/screens/EnProceso.tsx`): unidades con
+    `orden < listo` (evaluación → preparación) — edita `estado_proceso_id`
+    y `ubicacion_id` en una tabla, una fila por unidad.
+  - `En venta` (`src/screens/EnVenta.tsx`): unidades con `orden >= listo`
+    y no `es_final` (listo/apartado/vendido) — edita `estado_comercial`,
+    `ubicacion_id` y `precio_autorizado` (con `precio_minimo` solo visible
+    para admin) en la misma tabla.
+  El Expediente de cada unidad ya NO edita `estado_proceso`/`ubicación`
+  (`EstadoEditor` solo toca `estado_comercial`/`estado_documental`) —
+  evita tener el mismo campo editable en dos lugares sin sincronía.
 - La lógica de cierre financiero y reparto de utilidad vive en el cliente
   (`src/screens/Ventas.tsx`, función `cerrarFinanciero`) porque no hay
   funciones/RPC de Postgres para eso todavía — está protegida solo por

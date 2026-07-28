@@ -8,6 +8,12 @@ import { useAuth } from '../lib/auth'
  * Alta de vehículo (RN-02: cada vehículo es un centro de costos
  * independiente — nada existe sin la unidad). precio_minimo solo se pide
  * si el rol es admin; gerencia da de alta "sin importes" (Tabla 2).
+ *
+ * Esta pantalla solo registra la unidad UNA vez. estado_proceso y
+ * ubicación no se piden aquí: arrancan en 'comprado' / 'traslado' y se
+ * administran para todas las unidades a la vez desde "En proceso"
+ * (mientras se prepara) y "En venta" (una vez lista) — no tiene sentido
+ * pedirlos en el alta porque cambian constantemente después.
  */
 export default function VehiculoNuevo() {
   const navigate = useNavigate()
@@ -19,8 +25,7 @@ export default function VehiculoNuevo() {
   const [form, setForm] = useState({
     id_interno: '', marca: '', modelo: '', anio: new Date().getFullYear(),
     kilometraje: '', color: '', transmision: 'manual',
-    estado_proceso_id: '', ubicacion_id: '', fecha_compra: '',
-    precio_minimo: '', precio_autorizado: '',
+    fecha_compra: '', precio_minimo: '', precio_autorizado: '',
   })
 
   const set = (k: string, v: string | number) => setForm((f) => ({ ...f, [k]: v }))
@@ -30,6 +35,9 @@ export default function VehiculoNuevo() {
     if (!supabase) return
     setError(null)
     setGuardando(true)
+
+    const estadoInicial = estados.find((e) => e.clave === 'comprado') ?? estados[0]
+    const ubicacionInicial = ubicaciones.find((u) => u.clave === 'traslado') ?? ubicaciones[0]
 
     const { data, error } = await supabase
       .from('vehiculo')
@@ -41,8 +49,8 @@ export default function VehiculoNuevo() {
         kilometraje: form.kilometraje ? Number(form.kilometraje) : null,
         color: form.color || null,
         transmision: form.transmision,
-        estado_proceso_id: Number(form.estado_proceso_id),
-        ubicacion_id: Number(form.ubicacion_id),
+        estado_proceso_id: estadoInicial?.id,
+        ubicacion_id: ubicacionInicial?.id,
         fecha_compra: form.fecha_compra || null,
         precio_minimo: form.precio_minimo ? Number(form.precio_minimo) : null,
         precio_autorizado: form.precio_autorizado ? Number(form.precio_autorizado) : null,
@@ -85,21 +93,6 @@ export default function VehiculoNuevo() {
               <option value="manual">Manual</option>
               <option value="automatica">Automática</option>
               <option value="otra">Otra</option>
-            </select>
-          </Campo>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Campo label="Estado de proceso">
-            <select required value={form.estado_proceso_id} onChange={(e) => set('estado_proceso_id', e.target.value)} style={inputStyle}>
-              <option value="">Selecciona…</option>
-              {estados.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-            </select>
-          </Campo>
-          <Campo label="Ubicación">
-            <select required value={form.ubicacion_id} onChange={(e) => set('ubicacion_id', e.target.value)} style={inputStyle}>
-              <option value="">Selecciona…</option>
-              {ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
             </select>
           </Campo>
         </div>

@@ -8,6 +8,8 @@ const NAV = [
 ]
 
 const NAV_ADMIN_GERENCIA = [
+  { to: '/en-proceso', label: 'En proceso' },
+  { to: '/en-venta', label: 'En venta' },
   { to: '/taller', label: 'Taller' },
   { to: '/consignacion', label: 'Consignación' },
   { to: '/ventas', label: 'Ventas' },

@@ -7,6 +7,8 @@ import Inventario from './screens/Inventario'
 import VehiculoNuevo from './screens/VehiculoNuevo'
 import Expediente from './screens/Expediente'
 import Usuarios from './screens/Usuarios'
+import EnProceso from './screens/EnProceso'
+import EnVenta from './screens/EnVenta'
 import Socios from './screens/Socios'
 import Taller from './screens/Taller'
 import Consignacion from './screens/Consignacion'
@@ -39,6 +41,8 @@ function Rutas() {
         <Route path="inventario" element={<Inventario />} />
         <Route path="vehiculo/nuevo" element={<VehiculoNuevo />} />
         <Route path="vehiculo/:id" element={<Expediente />} />
+        <Route path="en-proceso" element={<EnProceso />} />
+        <Route path="en-venta" element={<EnVenta />} />
         <Route path="taller" element={<Taller />} />
         <Route path="consignacion" element={<Consignacion />} />
         <Route path="socios" element={<Socios />} />
