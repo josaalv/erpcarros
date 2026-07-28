@@ -200,6 +200,24 @@ todos sus proyectos con Supabase.
   con Postgres: pruebas negativas de RLS por rol.
 - El workflow de deploy no corre migraciones de Supabase — esas se
   aplican a mano vía MCP, igual que en `robsen-salon`.
+- **Taller y Consignación están desactivadas a propósito** (quitadas de
+  `Layout.tsx` y de las rutas en `App.tsx`, hasta que se defina qué deben
+  hacer esas pantallas). El código de `src/screens/Taller.tsx` y
+  `Consignacion.tsx` sigue intacto — reactivar es solo devolver el import,
+  la ruta y la línea de nav.
+- **Inventario** tiene dos secciones (`Unidades activas` / `Unidades
+  vendidas`, `src/screens/Inventario.tsx`), separadas por
+  `estado_comercial = 'vendido'` — no por `estado_proceso`, para que
+  coincida con el mismo criterio que ya usa "En venta"/cierre financiero.
+- **Documentación** (dentro del Expediente) ya sube el archivo real, no
+  solo el estado: bucket privado de Storage `documentos-vehiculo`
+  (políticas RLS: solo `es_admin_o_gerencia()`, igual que la tabla
+  `documento`), columna `documento.archivo_path`. También se pueden crear
+  categorías propias (`tipo_documento.es_personalizado = true`) desde la
+  misma pantalla, y borrarlas — el FK de `documento.tipo_documento_id`
+  bloquea el borrado solo si ya tiene un archivo (no hace falta lógica
+  extra para no dejar archivos huérfanos). Las 8 categorías originales del
+  checklist obligatorio no se pueden borrar desde la UI (RN-11).
 
 ## Convenciones de este proyecto
 
@@ -210,10 +228,27 @@ todos sus proyectos con Supabase.
 - **Los permisos se validan en la base de datos (RLS), nunca solo
   ocultando un botón en la interfaz.** Un campo financiero que el rol no
   permite se redacta en la vista de Postgres, no en el componente React.
+- **Simetría agregar/quitar (base de cualquier ERP):** si una pantalla
+  permite crear algo (categoría, registro, archivo), tiene que permitir
+  también editarlo o borrarlo — no construir flujos de solo-alta. Cuando
+  el borrado pueda romper una referencia (ej. una categoría con
+  documentos ligados), apoyarse en el FK de la base en vez de escribir
+  lógica de validación a mano — es más simple y no se puede olvidar
+  actualizar en un solo lugar.
+- **Compatibilidad de caracteres:** todo el contenido es español con
+  acentos/ñ — al generar identificadores derivados de texto libre (ej. la
+  `clave` de una categoría personalizada a partir de su nombre), usar
+  `normalize('NFD')` + quitar el bloque Unicode de marcas diacríticas
+  combinantes (puntos de código U+0300 a U+036F) por su valor hexadecimal
+  en la expresión regular, nunca pegando acentos sueltos como texto
+  literal en el código fuente — es frágil ante problemas de encoding (ver
+  `src/screens/Expediente.tsx`, función `crearCategoria`, para el patrón
+  correcto ya aplicado).
 - Antes de cualquier cambio de esquema, correr `get_advisors` (security)
   después de aplicar la migración.
 - Verificar en base real con transacciones de prueba cuando aplique, y
   guardar cada migración aplicada vía MCP también como archivo en
-  `supabase/migrations/` — el MCP no lo hace solo.
+  `supabase/migrations/` — el MCP no lo hace solo, salvo datos reales de
+  negocio (ver nota de arriba): esos nunca van al repo público.
 - Cambios de código van por PR (confirmar con el usuario antes de push
   directo a `main`).

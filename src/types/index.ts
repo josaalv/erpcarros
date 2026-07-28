@@ -110,6 +110,7 @@ export interface TipoDocumento {
   confidencial: boolean
   orden: number
   activo: boolean
+  es_personalizado: boolean
 }
 
 export interface Documento {
@@ -119,6 +120,7 @@ export interface Documento {
   estado: 'faltante' | 'en_tramite' | 'completo'
   fecha_obtencion: string | null
   observaciones: string | null
+  archivo_path: string | null
 }
 
 export interface SubestadoTaller {

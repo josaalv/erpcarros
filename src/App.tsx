@@ -10,8 +10,8 @@ import Usuarios from './screens/Usuarios'
 import EnProceso from './screens/EnProceso'
 import EnVenta from './screens/EnVenta'
 import Socios from './screens/Socios'
-import Taller from './screens/Taller'
-import Consignacion from './screens/Consignacion'
+// Taller y Consignación desactivadas (ver Layout.tsx) — los archivos
+// siguen en src/screens/, solo se quitó la ruta y el import.
 import Comisionista from './screens/Comisionista'
 import Ventas from './screens/Ventas'
 import Calculadora from './screens/Calculadora'
@@ -51,8 +51,6 @@ function Rutas() {
         <Route path="vehiculo/:id" element={<Expediente />} />
         <Route path="en-proceso" element={<EnProceso />} />
         <Route path="en-venta" element={<EnVenta />} />
-        <Route path="taller" element={<Taller />} />
-        <Route path="consignacion" element={<Consignacion />} />
         <Route path="socios" element={<Socios />} />
         <Route path="ventas" element={<Ventas />} />
         <Route path="calculadora" element={<Calculadora />} />

@@ -7,11 +7,13 @@ const NAV = [
   { to: '/inventario', label: 'Inventario' },
 ]
 
+// Taller y Consignación desactivadas a propósito: todavía no se define qué
+// hacen esas pantallas a futuro. El código sigue en src/screens/ sin tocar
+// (Taller.tsx, Consignacion.tsx) — reactivar es solo devolver estas dos
+// líneas y sus rutas en App.tsx.
 const NAV_ADMIN_GERENCIA = [
   { to: '/en-proceso', label: 'En proceso' },
   { to: '/en-venta', label: 'En venta' },
-  { to: '/taller', label: 'Taller' },
-  { to: '/consignacion', label: 'Consignación' },
   { to: '/ventas', label: 'Ventas' },
 ]
 

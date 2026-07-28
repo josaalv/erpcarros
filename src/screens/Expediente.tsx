@@ -127,10 +127,15 @@ export default function Expediente() {
   )
 }
 
+const BUCKET_DOCUMENTOS = 'documentos-vehiculo'
+
 /**
  * Checklist de documentos (RN-11): cada tipo_documento obligatorio debe
  * llegar a 'completo' antes de vender. Un tipo sin fila de documento
- * todavía cuenta como faltante.
+ * todavía cuenta como faltante. Admite subir el archivo real (Storage
+ * privado) y crear categorías propias además del catálogo original —
+ * toda categoría que se puede crear (es_personalizado) también se puede
+ * borrar, el FK de documento la protege si ya tiene archivos.
  */
 function DocumentoChecklist({ vehiculoId, tiposDocumento, documentos, puedeEditar, onCambio }: {
   vehiculoId: number
@@ -139,11 +144,14 @@ function DocumentoChecklist({ vehiculoId, tiposDocumento, documentos, puedeEdita
   puedeEditar: boolean
   onCambio: () => void
 }) {
-  const [guardandoId, setGuardandoId] = useState<number | null>(null)
+  const [ocupadoId, setOcupadoId] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [nuevaCategoria, setNuevaCategoria] = useState('')
+  const [creandoCategoria, setCreandoCategoria] = useState(false)
 
   async function cambiarEstado(tipo: TipoDocumento, estado: Documento['estado']) {
     if (!supabase) return
-    setGuardandoId(tipo.id)
+    setOcupadoId(tipo.id)
     const existente = documentos.find((d) => d.tipo_documento_id === tipo.id)
     if (existente) {
       await supabase.from('documento').update({
@@ -155,45 +163,171 @@ function DocumentoChecklist({ vehiculoId, tiposDocumento, documentos, puedeEdita
         fecha_obtencion: estado === 'completo' ? new Date().toISOString().slice(0, 10) : null,
       })
     }
-    setGuardandoId(null)
+    setOcupadoId(null)
     onCambio()
   }
 
-  if (tiposDocumento.length === 0) {
-    return <p style={{ fontSize: 12, color: '#8b8578', padding: '10px 0' }}>Sin catálogo de documentos disponible.</p>
+  async function subirArchivo(tipo: TipoDocumento, archivo: File) {
+    if (!supabase) return
+    setError(null)
+    setOcupadoId(tipo.id)
+    const ruta = `${vehiculoId}/${tipo.id}/${Date.now()}-${archivo.name}`
+    const { error: errSubida } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(ruta, archivo)
+    if (errSubida) {
+      setOcupadoId(null)
+      setError(`No se pudo subir el archivo: ${errSubida.message}`)
+      return
+    }
+    const existente = documentos.find((d) => d.tipo_documento_id === tipo.id)
+    const hoy = new Date().toISOString().slice(0, 10)
+    if (existente) {
+      await supabase.from('documento').update({ estado: 'completo', archivo_path: ruta, fecha_obtencion: hoy }).eq('id', existente.id)
+    } else {
+      await supabase.from('documento').insert({
+        vehiculo_id: vehiculoId, tipo_documento_id: tipo.id, estado: 'completo', archivo_path: ruta, fecha_obtencion: hoy,
+      })
+    }
+    setOcupadoId(null)
+    onCambio()
+  }
+
+  async function verArchivo(doc: Documento) {
+    if (!supabase || !doc.archivo_path) return
+    const { data, error: errUrl } = await supabase.storage.from(BUCKET_DOCUMENTOS).createSignedUrl(doc.archivo_path, 120)
+    if (errUrl || !data) { setError('No se pudo abrir el archivo.'); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
+  async function quitarArchivo(doc: Documento) {
+    if (!supabase || !doc.archivo_path) return
+    setOcupadoId(doc.tipo_documento_id)
+    await supabase.storage.from(BUCKET_DOCUMENTOS).remove([doc.archivo_path])
+    await supabase.from('documento').update({ archivo_path: null, estado: 'faltante', fecha_obtencion: null }).eq('id', doc.id)
+    setOcupadoId(null)
+    onCambio()
+  }
+
+  async function crearCategoria(e: FormEvent) {
+    e.preventDefault()
+    if (!supabase || !nuevaCategoria.trim()) return
+    setCreandoCategoria(true)
+    setError(null)
+    // normalize('NFD') separa acentos de su letra base (á → a + ´) para que
+    // el replace del bloque Unicode de marcas combinantes (U+0300-U+036F) las quite sin perder
+    // la letra — así "Título" se vuelve clave "titulo", no "t_tulo".
+    const clave = nuevaCategoria.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') + '_' + Date.now().toString().slice(-5)
+    const { error: errCrear } = await supabase.from('tipo_documento').insert({
+      clave, nombre: nuevaCategoria.trim(), obligatorio: false, confidencial: true, orden: 500, es_personalizado: true,
+    })
+    setCreandoCategoria(false)
+    if (errCrear) { setError(errCrear.message); return }
+    setNuevaCategoria('')
+    onCambio()
+  }
+
+  async function eliminarCategoria(tipo: TipoDocumento) {
+    if (!supabase) return
+    setError(null)
+    setOcupadoId(tipo.id)
+    const { error: errBorrar } = await supabase.from('tipo_documento').delete().eq('id', tipo.id)
+    setOcupadoId(null)
+    if (errBorrar) { setError('No se puede eliminar: ya tiene un documento cargado.'); return }
+    onCambio()
   }
 
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
-      <tbody>
-        {tiposDocumento.map((tipo) => {
-          const doc = documentos.find((d) => d.tipo_documento_id === tipo.id)
-          const estado = doc?.estado ?? 'faltante'
-          return (
-            <tr key={tipo.id} style={{ borderTop: '1px solid #f0ede6', opacity: guardandoId === tipo.id ? 0.5 : 1 }}>
-              <td style={{ padding: '9px 10px' }}>
-                {tipo.nombre} {tipo.obligatorio && <span style={{ color: '#8b8578', fontSize: 10.5 }}>· obligatorio</span>}
-              </td>
-              <td style={{ padding: '9px 10px', textAlign: 'right' }}>
-                {puedeEditar ? (
-                  <select
-                    value={estado}
-                    onChange={(e) => cambiarEstado(tipo, e.target.value as Documento['estado'])}
-                    style={{ padding: '5px 7px', border: '1px solid #ddd8d0', fontSize: 12, fontFamily: 'inherit' }}
-                  >
-                    <option value="faltante">Faltante</option>
-                    <option value="en_tramite">En trámite</option>
-                    <option value="completo">Completo</option>
-                  </select>
-                ) : (
-                  <EstadoBadge estado={estado} />
-                )}
-              </td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
+    <div>
+      {tiposDocumento.length === 0 ? (
+        <p style={{ fontSize: 12, color: '#8b8578', padding: '10px 0' }}>Sin catálogo de documentos disponible.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
+          <tbody>
+            {tiposDocumento.map((tipo) => {
+              const doc = documentos.find((d) => d.tipo_documento_id === tipo.id)
+              const estado = doc?.estado ?? 'faltante'
+              const ocupado = ocupadoId === tipo.id
+              return (
+                <tr key={tipo.id} style={{ borderTop: '1px solid #f0ede6', opacity: ocupado ? 0.5 : 1 }}>
+                  <td style={{ padding: '9px 10px' }}>
+                    {tipo.nombre} {tipo.obligatorio && <span style={{ color: '#8b8578', fontSize: 10.5 }}>· obligatorio</span>}
+                    {puedeEditar && tipo.es_personalizado && (
+                      <button
+                        onClick={() => eliminarCategoria(tipo)}
+                        disabled={ocupado}
+                        title="Eliminar categoría"
+                        style={{ background: 'none', border: 'none', color: '#8b8578', fontSize: 11, cursor: 'pointer', marginLeft: 8, padding: 0 }}
+                      >
+                        eliminar categoría
+                      </button>
+                    )}
+                  </td>
+                  <td style={{ padding: '9px 10px' }}>
+                    {puedeEditar ? (
+                      <select
+                        value={estado}
+                        onChange={(e) => cambiarEstado(tipo, e.target.value as Documento['estado'])}
+                        disabled={ocupado}
+                        style={{ padding: '5px 7px', border: '1px solid #ddd8d0', fontSize: 12, fontFamily: 'inherit' }}
+                      >
+                        <option value="faltante">Faltante</option>
+                        <option value="en_tramite">En trámite</option>
+                        <option value="completo">Completo</option>
+                      </select>
+                    ) : (
+                      <EstadoBadge estado={estado} />
+                    )}
+                  </td>
+                  <td style={{ padding: '9px 10px', textAlign: 'right' }}>
+                    {doc?.archivo_path ? (
+                      <span style={{ display: 'inline-flex', gap: 10 }}>
+                        <button onClick={() => verArchivo(doc)} style={{ background: 'none', border: 'none', color: 'oklch(0.45 0.09 215)', fontSize: 11.5, cursor: 'pointer', padding: 0 }}>
+                          Ver archivo
+                        </button>
+                        {puedeEditar && (
+                          <button onClick={() => quitarArchivo(doc)} disabled={ocupado} style={{ background: 'none', border: 'none', color: 'oklch(0.48 0.13 32)', fontSize: 11.5, cursor: 'pointer', padding: 0 }}>
+                            Quitar
+                          </button>
+                        )}
+                      </span>
+                    ) : puedeEditar ? (
+                      <label style={{ fontSize: 11.5, color: 'oklch(0.45 0.09 215)', cursor: ocupado ? 'default' : 'pointer' }}>
+                        {ocupado ? 'Subiendo…' : 'Subir archivo'}
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.heic,.webp"
+                          disabled={ocupado}
+                          style={{ display: 'none' }}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) subirArchivo(tipo, f); e.target.value = '' }}
+                        />
+                      </label>
+                    ) : (
+                      <span style={{ fontSize: 11.5, color: '#8b8578' }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {error && <p style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)', marginTop: 8 }}>{error}</p>}
+
+      {puedeEditar && (
+        <form onSubmit={crearCategoria} style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <input
+            placeholder="Nombre de la nueva categoría…"
+            value={nuevaCategoria}
+            onChange={(e) => setNuevaCategoria(e.target.value)}
+            style={{ padding: '7px 9px', border: '1px solid #ddd8d0', fontSize: 12.5, fontFamily: 'inherit', flex: 1, maxWidth: 260 }}
+          />
+          <button type="submit" disabled={creandoCategoria || !nuevaCategoria.trim()} style={{ background: '#fff', color: '#26302f', border: '1px solid #26302f', padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>
+            + Nueva categoría
+          </button>
+        </form>
+      )}
+    </div>
   )
 }
 
