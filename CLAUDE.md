@@ -205,6 +205,18 @@ todos sus proyectos con Supabase.
   hacer esas pantallas). El código de `src/screens/Taller.tsx` y
   `Consignacion.tsx` sigue intacto — reactivar es solo devolver el import,
   la ruta y la línea de nav.
+  **Plan que dio el usuario para cuando se retome** (todavía sin
+  construir, no adivinar la implementación sin confirmar primero):
+  Consignación deja de ser un ítem de nav independiente — pasa a ser un
+  submenú/sección DENTRO de "En venta". La idea completa: "En venta"
+  agrupa todas las unidades listas para vender, y dentro de ahí se
+  distinguen por dónde están físicamente — "en taller" (ubicación propia)
+  o "en consignación" (en un lote externo). La sección de consignación
+  necesita mostrar la info completa del lote (ya existe la tabla `lote`:
+  nombre, contacto, teléfono — ver `Consignacion.tsx` ya construido para
+  reutilizar esa parte). Osea: `En venta` = vista general, con dos
+  subvistas o filtros por ubicación (taller / consignación), no dos
+  pantallas separadas sin relación.
 - **Inventario** tiene dos secciones (`Unidades activas` / `Unidades
   vendidas`, `src/screens/Inventario.tsx`), separadas por
   `estado_comercial = 'vendido'` — no por `estado_proceso`, para que

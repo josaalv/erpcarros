@@ -121,6 +121,9 @@ export interface Documento {
   fecha_obtencion: string | null
   observaciones: string | null
   archivo_path: string | null
+  /** Si esta categoría aplica a esta unidad en particular — el tipo de
+   * documentación varía mucho de un carro a otro. */
+  activo: boolean
 }
 
 export interface SubestadoTaller {
