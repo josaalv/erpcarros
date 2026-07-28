@@ -14,10 +14,12 @@ const COMERCIAL_LABEL: Record<string, string> = {
 }
 
 /**
- * Todas las unidades que ya llegaron a "listo para venta" (o más adelante:
- * apartado, vendido). Aquí se administra estado_comercial, ubicación y el
- * precio publicado para el conjunto completo — el mismo criterio que "En
- * proceso" pero del otro lado del ciclo.
+ * Unidades que ya llegaron a "listo para venta" y SIGUEN en proceso de
+ * venderse (publicado/apartado/etc). En cuanto estado_comercial pasa a
+ * 'vendido' el ciclo terminó — esa unidad ya no pertenece aquí, sale a
+ * "Unidades vendidas" en Inventario. Aquí se administra estado_comercial,
+ * ubicación y el precio publicado para el conjunto completo — el mismo
+ * criterio que "En proceso" pero del otro lado del ciclo.
  */
 export default function EnVenta() {
   const { perfil } = useAuth()
@@ -39,6 +41,7 @@ export default function EnVenta() {
 
   const umbralListo = estados.find((e) => e.clave === 'listo')?.orden ?? 70
   const enVenta = vehiculos.filter((v) => {
+    if (v.estado_comercial === 'vendido') return false
     const estado = estados.find((e) => e.id === v.estado_proceso_id)
     return estado && !estado.es_final && estado.orden >= umbralListo
   })

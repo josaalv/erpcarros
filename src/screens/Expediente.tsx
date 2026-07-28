@@ -1,38 +1,47 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
 import { mxn, porcentaje } from '../lib/helpers'
-import type { VehiculoFicha, Gasto, TipoDocumento, Documento } from '../types'
+import { Modal } from '../components/Ui'
+import type { VehiculoFicha, Gasto, TipoDocumento, Documento, Aportacion, Socio } from '../types'
 
 export default function Expediente() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { perfil } = useAuth()
   const { categorias } = useCatalogos()
   const [veh, setVeh] = useState<VehiculoFicha | null>(null)
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [tiposDocumento, setTiposDocumento] = useState<TipoDocumento[]>([])
   const [documentos, setDocumentos] = useState<Documento[]>([])
+  const [aportaciones, setAportaciones] = useState<Aportacion[]>([])
+  const [socios, setSocios] = useState<Socio[]>([])
   const [cargando, setCargando] = useState(true)
   const [abrirForm, setAbrirForm] = useState(false)
 
   const puedeCapturarGasto = perfil?.rol === 'admin'
   const puedeEditarEstado = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
   const puedeEditarDocumentos = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
+  const puedeVerCapital = perfil?.rol === 'admin'
 
   async function recargar() {
     if (!supabase || !id) return
-    const [vehRes, gastosRes, tiposRes, docsRes] = await Promise.all([
+    const [vehRes, gastosRes, tiposRes, docsRes, aportRes, sociosRes] = await Promise.all([
       supabase.from('v_vehiculo_ficha').select('*').eq('id', id).maybeSingle(),
       supabase.from('gasto').select('*').eq('vehiculo_id', id).order('fecha', { ascending: false }),
       supabase.from('tipo_documento').select('*').eq('activo', true).order('orden'),
       supabase.from('documento').select('*').eq('vehiculo_id', id),
+      supabase.from('aportacion').select('*').eq('vehiculo_id', id).order('fecha'),
+      supabase.from('socio').select('*').order('nombre'),
     ])
     setVeh(vehRes.data as VehiculoFicha | null)
     setGastos((gastosRes.data ?? []) as Gasto[])
     setTiposDocumento((tiposRes.data ?? []) as TipoDocumento[])
     setDocumentos((docsRes.data ?? []) as Documento[])
+    setAportaciones((aportRes.data ?? []) as Aportacion[])
+    setSocios((sociosRes.data ?? []) as Socio[])
     setCargando(false)
   }
 
@@ -113,6 +122,15 @@ export default function Expediente() {
         />
       )}
 
+      {puedeVerCapital && (
+        <CapitalSocios
+          vehiculoId={veh.id}
+          aportaciones={aportaciones}
+          socios={socios}
+          onCambio={recargar}
+        />
+      )}
+
       <h2 style={{ font: '500 15px "IBM Plex Sans"', borderBottom: '1.5px solid #26302f', paddingBottom: 8, marginBottom: 4, marginTop: 28 }}>
         Documentación
       </h2>
@@ -123,6 +141,96 @@ export default function Expediente() {
         puedeEditar={puedeEditarDocumentos}
         onCambio={recargar}
       />
+
+      {perfil?.rol === 'admin' && (
+        <EliminarUnidad veh={veh} documentos={documentos} onEliminada={() => navigate('/inventario')} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Dar de baja una unidad completa (RN básica de cualquier ERP: si algo se
+ * puede agregar, también se debe poder quitar). Cascada en la base ya
+ * borra compra/gasto/documento/venta/etc — aquí solo hay que limpiar los
+ * archivos de Storage primero (Postgres no sabe de su existencia) y pedir
+ * que se escriba el folio para confirmar, porque es irreversible.
+ */
+function EliminarUnidad({ veh, documentos, onEliminada }: {
+  veh: VehiculoFicha
+  documentos: Documento[]
+  onEliminada: () => void
+}) {
+  const [abrir, setAbrir] = useState(false)
+  const [confirmacion, setConfirmacion] = useState('')
+  const [eliminando, setEliminando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function eliminar() {
+    if (!supabase) return
+    setEliminando(true)
+    setError(null)
+
+    const rutas = documentos.map((d) => d.archivo_path).filter((p): p is string => Boolean(p))
+    if (rutas.length > 0) {
+      await supabase.storage.from(BUCKET_DOCUMENTOS).remove(rutas)
+    }
+
+    const { error: errBorrar } = await supabase.from('vehiculo').delete().eq('id', veh.id)
+    setEliminando(false)
+    if (errBorrar) { setError(errBorrar.message); return }
+    onEliminada()
+  }
+
+  return (
+    <div style={{ marginTop: 36, paddingTop: 16, borderTop: '1px solid #e4e0d8' }}>
+      <button
+        onClick={() => setAbrir(true)}
+        style={{ background: 'none', border: '1px solid oklch(0.48 0.13 32)', color: 'oklch(0.48 0.13 32)', padding: '7px 14px', fontSize: 12, cursor: 'pointer' }}
+      >
+        Eliminar unidad
+      </button>
+
+      {abrir && (
+        <Modal onClose={() => setAbrir(false)}>
+          <h3 style={{ margin: '0 0 8px', font: '500 16px Georgia, serif' }}>Eliminar {veh.id_interno}</h3>
+          <p style={{ fontSize: 12.5, color: '#55524b', lineHeight: 1.5 }}>
+            Esto borra la unidad y todo lo que depende de ella: compra, gastos, documentos y archivos,
+            aportaciones, y si ya se vendió, la venta y el cierre financiero. No se puede deshacer.
+          </p>
+          <p style={{ fontSize: 12.5, color: '#55524b' }}>
+            Escribe <strong>{veh.id_interno}</strong> para confirmar:
+          </p>
+          <input
+            value={confirmacion}
+            onChange={(e) => setConfirmacion(e.target.value)}
+            style={{ padding: '8px 10px', border: '1px solid #ddd8d0', fontSize: 13.5, fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' }}
+          />
+          {error && <p style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)', marginTop: 8 }}>{error}</p>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <button
+              type="button"
+              onClick={() => setAbrir(false)}
+              style={{ flex: 1, padding: 10, background: '#f4f1ea', border: 'none', cursor: 'pointer' }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={eliminar}
+              disabled={confirmacion !== veh.id_interno || eliminando}
+              style={{
+                flex: 1, padding: 10, border: 'none',
+                cursor: confirmacion === veh.id_interno && !eliminando ? 'pointer' : 'default',
+                background: confirmacion === veh.id_interno ? 'oklch(0.48 0.13 32)' : '#e8e4dc',
+                color: confirmacion === veh.id_interno ? '#fff' : '#a09889',
+              }}
+            >
+              {eliminando ? 'Eliminando…' : 'Eliminar definitivamente'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -537,6 +645,129 @@ function GastoModal({ vehiculoId, categorias, onClose, onGuardado }: {
         </div>
       </form>
     </div>
+  )
+}
+
+/**
+ * Capital de socios asignado a ESTA unidad — se ve y se edita aquí mismo
+ * (no solo desde la pantalla Socios) justamente para que quede claro, al
+ * ver el inventario, de quién es el dinero metido en cada carro y no se
+ * mezcle entre socios. Participación se calcula localmente sobre el total
+ * de esta unidad (mismo criterio que v_participacion_socio).
+ */
+function CapitalSocios({ vehiculoId, aportaciones, socios, onCambio }: {
+  vehiculoId: number
+  aportaciones: Aportacion[]
+  socios: Socio[]
+  onCambio: () => void
+}) {
+  const [abrirForm, setAbrirForm] = useState(false)
+  const [editando, setEditando] = useState<Aportacion | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const total = aportaciones.reduce((acc, a) => acc + a.monto, 0)
+
+  function nombreSocio(id: number) {
+    return socios.find((s) => s.id === id)?.nombre ?? '—'
+  }
+
+  async function eliminar(aportacion: Aportacion) {
+    if (!supabase) return
+    setError(null)
+    const { error: errBorrar } = await supabase.from('aportacion').delete().eq('id', aportacion.id)
+    if (errBorrar) { setError(errBorrar.message); return }
+    onCambio()
+  }
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid #26302f', paddingBottom: 8, marginBottom: 4 }}>
+        <h2 style={{ font: '500 15px "IBM Plex Sans"', margin: 0 }}>Capital / Socios</h2>
+        <button onClick={() => setAbrirForm(true)} style={{ background: '#26302f', color: '#f3f1ec', border: 'none', padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>
+          + Asignar socio
+        </button>
+      </div>
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
+        <tbody>
+          {aportaciones.map((a) => (
+            <tr key={a.id} style={{ borderTop: '1px solid #f0ede6' }}>
+              <td style={{ padding: '9px 10px' }}>{nombreSocio(a.socio_id)}</td>
+              <td style={{ padding: '9px 10px', color: '#8b8578' }}>{a.fecha}</td>
+              <td style={{ padding: '9px 10px', textAlign: 'right' }}>{total > 0 ? `${((a.monto / total) * 100).toFixed(1)}%` : '—'}</td>
+              <td style={{ padding: '9px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{mxn(a.monto)}</td>
+              <td style={{ padding: '9px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <button onClick={() => setEditando(a)} style={{ background: 'none', border: 'none', color: '#8b8578', fontSize: 11, cursor: 'pointer', marginRight: 10, padding: 0 }}>editar</button>
+                <button onClick={() => eliminar(a)} style={{ background: 'none', border: 'none', color: '#8b8578', fontSize: 11, cursor: 'pointer', padding: 0 }}>eliminar</button>
+              </td>
+            </tr>
+          ))}
+          {aportaciones.length === 0 && (
+            <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: '#8b8578' }}>Sin capital de socios asignado a esta unidad.</td></tr>
+          )}
+        </tbody>
+      </table>
+      {error && <p style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)', marginTop: 8 }}>{error}</p>}
+
+      {(abrirForm || editando) && (
+        <AportacionVehiculoModal
+          vehiculoId={vehiculoId}
+          socios={socios}
+          aportacion={editando}
+          onClose={() => { setAbrirForm(false); setEditando(null) }}
+          onGuardado={() => { setAbrirForm(false); setEditando(null); onCambio() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function AportacionVehiculoModal({ vehiculoId, socios, aportacion, onClose, onGuardado }: {
+  vehiculoId: number
+  socios: Socio[]
+  aportacion: Aportacion | null
+  onClose: () => void
+  onGuardado: () => void
+}) {
+  const [socioId, setSocioId] = useState(aportacion ? String(aportacion.socio_id) : '')
+  const [monto, setMonto] = useState(aportacion ? String(aportacion.monto) : '')
+  const [fecha, setFecha] = useState(aportacion?.fecha ?? new Date().toISOString().slice(0, 10))
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!supabase) return
+    setGuardando(true)
+    setError(null)
+    const datos = { socio_id: Number(socioId), vehiculo_id: vehiculoId, monto: Number(monto), fecha }
+    const { error } = aportacion
+      ? await supabase.from('aportacion').update(datos).eq('id', aportacion.id)
+      : await supabase.from('aportacion').insert(datos)
+    setGuardando(false)
+    if (error) { setError(error.message); return }
+    onGuardado()
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>{aportacion ? 'Editar capital' : 'Asignar socio a esta unidad'}</h3>
+        <select required value={socioId} onChange={(e) => setSocioId(e.target.value)} style={inputStyle}>
+          <option value="">Socio…</option>
+          {socios.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+        </select>
+        <input required type="number" step="0.01" placeholder="Monto aportado" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} />
+        <input required type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} />
+        {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+          <button type="button" onClick={onClose} style={{ flex: 1, padding: 10, background: '#f4f1ea', border: 'none', cursor: 'pointer' }}>Cancelar</button>
+          <button type="submit" disabled={guardando} style={{ flex: 1, padding: 10, background: '#26302f', color: '#f3f1ec', border: 'none', cursor: 'pointer' }}>
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 

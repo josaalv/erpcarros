@@ -242,6 +242,35 @@ todos sus proyectos con Supabase.
   bloquea el borrado solo si ya tiene un archivo (no hace falta lógica
   extra para no dejar archivos huérfanos). Las 8 categorías originales del
   checklist obligatorio no se pueden borrar desde la UI (RN-11).
+- **Se puede eliminar una unidad completa** (migración
+  `011_permitir_eliminar_vehiculo.sql`): antes ningún FK de `vehiculo_id`
+  tenía `ON DELETE`, así que Postgres rechazaba el borrado en cuanto
+  existía una sola fila dependiente — es decir, siempre. Ahora
+  compra/gasto/aportacion/documento/consignacion/venta/
+  cierre_financiero/liquidacion/etc. cascadean (se van con la unidad);
+  `evaluacion_puja`/`cita`/`prospecto`/`venta.veh_tomado_id` quedan en
+  `SET NULL` porque esos registros siguen siendo válidos sin esa unidad
+  puntual. El botón vive en `Expediente.tsx` (`EliminarUnidad`,
+  admin-only) y pide escribir el `id_interno` exacto para confirmar —
+  primero borra los archivos de Storage de sus `documento` (Postgres no
+  los conoce), luego el `vehiculo` (la cascada hace el resto).
+- **"En venta" solo debe mostrar unidades que se están vendiendo, no las
+  ya vendidas** — el filtro ahora excluye explícitamente
+  `estado_comercial === 'vendido'` además del criterio de
+  `estado_proceso.orden`. Una vez que una unidad se marca vendida
+  desaparece de "En venta" y solo aparece en la pestaña "Unidades
+  vendidas" de Inventario.
+- **Socios y aportaciones son editables/borrables**, no solo se pueden
+  crear (`Socios.tsx`): cada socio tiene botones editar/eliminar y una
+  casilla de activo; cada aportación igual. El FK de
+  `aportacion`/`liquidacion` hacia `socio` protege el borrado de un socio
+  con historial.
+- **Capital de socios asignado por unidad, visible en el Expediente**
+  (sección "Capital / Socios", solo admin): antes la única forma de ver
+  qué socio puso dinero en qué carro era ir a la pantalla Socios y cruzar
+  manualmente — ahora se ve y se edita directo en la ficha del vehículo,
+  con el % de participación calculado ahí mismo, para que quede explícito
+  de quién es el capital de cada unidad y no se mezcle entre socios.
 
 ## Convenciones de este proyecto
 
