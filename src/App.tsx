@@ -7,6 +7,12 @@ import Inventario from './screens/Inventario'
 import VehiculoNuevo from './screens/VehiculoNuevo'
 import Expediente from './screens/Expediente'
 import Usuarios from './screens/Usuarios'
+import Socios from './screens/Socios'
+import Taller from './screens/Taller'
+import Consignacion from './screens/Consignacion'
+import Comisionista from './screens/Comisionista'
+import Ventas from './screens/Ventas'
+import Calculadora from './screens/Calculadora'
 
 function Protegido({ children }: { children: React.ReactNode }) {
   const { session, cargando } = useAuth()
@@ -33,6 +39,12 @@ function Rutas() {
         <Route path="inventario" element={<Inventario />} />
         <Route path="vehiculo/nuevo" element={<VehiculoNuevo />} />
         <Route path="vehiculo/:id" element={<Expediente />} />
+        <Route path="taller" element={<Taller />} />
+        <Route path="consignacion" element={<Consignacion />} />
+        <Route path="socios" element={<Socios />} />
+        <Route path="ventas" element={<Ventas />} />
+        <Route path="calculadora" element={<Calculadora />} />
+        <Route path="comisionista" element={<Comisionista />} />
         <Route path="usuarios" element={<Usuarios />} />
       </Route>
     </Routes>

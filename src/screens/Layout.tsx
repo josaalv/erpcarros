@@ -7,9 +7,28 @@ const NAV = [
   { to: '/inventario', label: 'Inventario' },
 ]
 
+const NAV_ADMIN_GERENCIA = [
+  { to: '/taller', label: 'Taller' },
+  { to: '/consignacion', label: 'Consignación' },
+  { to: '/ventas', label: 'Ventas' },
+]
+
+const NAV_ADMIN = [
+  { to: '/socios', label: 'Socios' },
+  { to: '/calculadora', label: 'Calculadora' },
+  { to: '/usuarios', label: 'Usuarios' },
+]
+
+const NAV_COMISIONISTA = [{ to: '/comisionista', label: 'Mi portal' }]
+
 export default function Layout() {
   const { perfil, signOut } = useAuth()
-  const nav = perfil?.rol === 'admin' ? [...NAV, { to: '/usuarios', label: 'Usuarios' }] : NAV
+  const nav = [
+    ...NAV,
+    ...(perfil?.rol === 'admin' || perfil?.rol === 'gerencia' ? NAV_ADMIN_GERENCIA : []),
+    ...(perfil?.rol === 'admin' ? NAV_ADMIN : []),
+    ...(perfil?.rol === 'comisionista' ? NAV_COMISIONISTA : []),
+  ]
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: '"IBM Plex Sans", system-ui, sans-serif' }}>

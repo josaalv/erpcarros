@@ -90,6 +90,21 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
    colapsadas (hallazgos de `get_advisors` performance).
 4. `004_semillas_catalogos_y_demo.sql` — catálogos completos + 5 unidades
    de demostración (`es_demo=true`) tomadas del prototipo de frontend.
+5. `005_esquema_completo_taller_comercial_cierre.sql` — el resto de las
+   tablas del diseño original: `tipo_documento`, `documento`, `proveedor`,
+   `subestado_taller`, `orden_trabajo`, `dano`, `subasta`,
+   `evaluacion_puja`, `lote`, `consignacion`, `comisionista` (con
+   `perfil_id` + función `mi_comisionista_id()`), `cliente`, `prospecto`,
+   `interaccion`, `cita`, `oferta`, `apartado`, `venta`, `comision`,
+   `cierre_financiero`, `reapertura`, `liquidacion`, vistas
+   `v_participacion_socio` y `v_roi_segmento`, RLS completa en todo.
+6. `006_semillas_taller_comercial_demo.sql` — semillas de demo para el
+   esquema de la migración 005 (documentos, orden de trabajo, consignación,
+   comisionista, clientes, prospecto).
+7. `007_permitir_comisionista_ver_sus_clientes_referidos.sql` — política
+   adicional en `cliente` para que un comisionista vea (solo lectura) los
+   clientes que él mismo refirió vía `prospecto` — sin esto el portal de
+   comisionista no podía mostrar nombre/teléfono del referido.
 
 **Ya verificado al peso dos veces** (MySQL y ahora Postgres): Mirage 2022
 reproduce `costo_total = 142,580.00` vía `v_costo_vehiculo` en ambos
@@ -100,20 +115,27 @@ todos sus proyectos con Supabase.
 ## Qué falta (no asumir que ya existe)
 
 - Pantallas construidas (`src/screens/`): Login/registro, Panel,
-  Inventario, Expediente del vehículo (con edición de estado/ubicación),
-  alta de vehículo, captura de gasto, administración de usuarios (admin
-  cambia rol/activo de cada perfil — necesario porque todo el que se
-  registra entra como `gerencia` por default). Faltan: Socios y
-  liquidación, Documentación, Taller, Consignación, Portal de
-  comisionista, Venta/cierre, Calculadora de puja — construir en ese
-  orden aproximado (protege capital antes que comodidad, mismo criterio
-  que el análisis original).
-- Tablas del diseño original **todavía no migradas a Postgres**:
-  `proveedor`, `comisionista`, `cliente`, `prospecto`, `orden_trabajo`,
-  `documento`, `media`, `consignacion`, `venta`, `comision`,
-  `cierre_financiero`, `liquidacion`, etc. Solo se tradujo el núcleo
-  mínimo (vehículo, compra, gasto, socio, aportación) para tener algo
-  funcional rápido — bastante lejos de las 46 tablas del diseño original.
+  Inventario, Expediente del vehículo (con edición de estado/ubicación,
+  checklist de documentación), alta de vehículo, captura de gasto,
+  administración de usuarios, Socios y liquidación, Taller (kanban de
+  órdenes de trabajo), Consignación (lotes), Portal de comisionista
+  (Catálogo / Mis referidos / Mis comisiones), Ventas y cierre financiero
+  (registrar venta → cerrar financiero → genera `liquidacion` por socio
+  vía `v_participacion_socio`), Calculadora de puja (techo de puja + ROI
+  proyectado contra `v_roi_segmento`).
+- La lógica de cierre financiero y reparto de utilidad vive en el cliente
+  (`src/screens/Ventas.tsx`, función `cerrarFinanciero`) porque no hay
+  funciones/RPC de Postgres para eso todavía — está protegida solo por
+  ser una pantalla admin-only + RLS de las tablas que toca (`venta`,
+  `cierre_financiero`, `liquidacion`, `comision`), no por lógica en la
+  base. Si se detecta que dos admins pueden cerrar la misma unidad dos
+  veces (race condition), mover esto a una función `security definer` en
+  Postgres.
+- La calculadora de puja usa una fórmula propia razonable (techo = precio
+  esperado − costo de reparación − comisión de subasta − utilidad
+  objetivo) porque `docs/analisis-fuente/` con la fórmula original ya no
+  está en el repo. Si el usuario da la fórmula exacta de RN-05, ajustar
+  `src/screens/Calculadora.tsx`.
 - Sin pruebas automatizadas todavía (el diseño Laravel sí las tenía —
   `AutorizacionPermisosTest`/`CalculoFinancieroTest` — pero se
   descartaron con el resto del código PHP). Replicar el mismo espíritu

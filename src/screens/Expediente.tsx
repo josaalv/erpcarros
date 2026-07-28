@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
 import { mxn, porcentaje } from '../lib/helpers'
-import type { VehiculoFicha, Gasto, EstadoProceso, Ubicacion } from '../types'
+import type { VehiculoFicha, Gasto, EstadoProceso, Ubicacion, TipoDocumento, Documento } from '../types'
 
 export default function Expediente() {
   const { id } = useParams()
@@ -12,20 +12,27 @@ export default function Expediente() {
   const { categorias, estados, ubicaciones } = useCatalogos()
   const [veh, setVeh] = useState<VehiculoFicha | null>(null)
   const [gastos, setGastos] = useState<Gasto[]>([])
+  const [tiposDocumento, setTiposDocumento] = useState<TipoDocumento[]>([])
+  const [documentos, setDocumentos] = useState<Documento[]>([])
   const [cargando, setCargando] = useState(true)
   const [abrirForm, setAbrirForm] = useState(false)
 
   const puedeCapturarGasto = perfil?.rol === 'admin'
   const puedeEditarEstado = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
+  const puedeEditarDocumentos = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
 
   async function recargar() {
     if (!supabase || !id) return
-    const [vehRes, gastosRes] = await Promise.all([
+    const [vehRes, gastosRes, tiposRes, docsRes] = await Promise.all([
       supabase.from('v_vehiculo_ficha').select('*').eq('id', id).maybeSingle(),
       supabase.from('gasto').select('*').eq('vehiculo_id', id).order('fecha', { ascending: false }),
+      supabase.from('tipo_documento').select('*').eq('activo', true).order('orden'),
+      supabase.from('documento').select('*').eq('vehiculo_id', id),
     ])
     setVeh(vehRes.data as VehiculoFicha | null)
     setGastos((gastosRes.data ?? []) as Gasto[])
+    setTiposDocumento((tiposRes.data ?? []) as TipoDocumento[])
+    setDocumentos((docsRes.data ?? []) as Documento[])
     setCargando(false)
   }
 
@@ -105,8 +112,95 @@ export default function Expediente() {
           onGuardado={() => { setAbrirForm(false); recargar() }}
         />
       )}
+
+      <h2 style={{ font: '500 15px "IBM Plex Sans"', borderBottom: '1.5px solid #26302f', paddingBottom: 8, marginBottom: 4, marginTop: 28 }}>
+        Documentación
+      </h2>
+      <DocumentoChecklist
+        vehiculoId={veh.id}
+        tiposDocumento={tiposDocumento}
+        documentos={documentos}
+        puedeEditar={puedeEditarDocumentos}
+        onCambio={recargar}
+      />
     </div>
   )
+}
+
+/**
+ * Checklist de documentos (RN-11): cada tipo_documento obligatorio debe
+ * llegar a 'completo' antes de vender. Un tipo sin fila de documento
+ * todavía cuenta como faltante.
+ */
+function DocumentoChecklist({ vehiculoId, tiposDocumento, documentos, puedeEditar, onCambio }: {
+  vehiculoId: number
+  tiposDocumento: TipoDocumento[]
+  documentos: Documento[]
+  puedeEditar: boolean
+  onCambio: () => void
+}) {
+  const [guardandoId, setGuardandoId] = useState<number | null>(null)
+
+  async function cambiarEstado(tipo: TipoDocumento, estado: Documento['estado']) {
+    if (!supabase) return
+    setGuardandoId(tipo.id)
+    const existente = documentos.find((d) => d.tipo_documento_id === tipo.id)
+    if (existente) {
+      await supabase.from('documento').update({
+        estado, fecha_obtencion: estado === 'completo' ? new Date().toISOString().slice(0, 10) : null,
+      }).eq('id', existente.id)
+    } else {
+      await supabase.from('documento').insert({
+        vehiculo_id: vehiculoId, tipo_documento_id: tipo.id, estado,
+        fecha_obtencion: estado === 'completo' ? new Date().toISOString().slice(0, 10) : null,
+      })
+    }
+    setGuardandoId(null)
+    onCambio()
+  }
+
+  if (tiposDocumento.length === 0) {
+    return <p style={{ fontSize: 12, color: '#8b8578', padding: '10px 0' }}>Sin catálogo de documentos disponible.</p>
+  }
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
+      <tbody>
+        {tiposDocumento.map((tipo) => {
+          const doc = documentos.find((d) => d.tipo_documento_id === tipo.id)
+          const estado = doc?.estado ?? 'faltante'
+          return (
+            <tr key={tipo.id} style={{ borderTop: '1px solid #f0ede6', opacity: guardandoId === tipo.id ? 0.5 : 1 }}>
+              <td style={{ padding: '9px 10px' }}>
+                {tipo.nombre} {tipo.obligatorio && <span style={{ color: '#8b8578', fontSize: 10.5 }}>· obligatorio</span>}
+              </td>
+              <td style={{ padding: '9px 10px', textAlign: 'right' }}>
+                {puedeEditar ? (
+                  <select
+                    value={estado}
+                    onChange={(e) => cambiarEstado(tipo, e.target.value as Documento['estado'])}
+                    style={{ padding: '5px 7px', border: '1px solid #ddd8d0', fontSize: 12, fontFamily: 'inherit' }}
+                  >
+                    <option value="faltante">Faltante</option>
+                    <option value="en_tramite">En trámite</option>
+                    <option value="completo">Completo</option>
+                  </select>
+                ) : (
+                  <EstadoBadge estado={estado} />
+                )}
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+function EstadoBadge({ estado }: { estado: Documento['estado'] }) {
+  const color = estado === 'completo' ? 'oklch(0.45 0.09 150)' : estado === 'en_tramite' ? 'oklch(0.55 0.13 85)' : 'oklch(0.48 0.13 32)'
+  const label = estado === 'completo' ? 'Completo' : estado === 'en_tramite' ? 'En trámite' : 'Faltante'
+  return <span style={{ fontSize: 11.5, color }}>{label}</span>
 }
 
 const COMERCIAL_OPCIONES = ['no_publicado', 'publicado', 'en_consignacion', 'con_referidos', 'apartado', 'vendido']
