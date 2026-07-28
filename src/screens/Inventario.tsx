@@ -5,21 +5,24 @@ import { useAuth } from '../lib/auth'
 import { mxn } from '../lib/helpers'
 import type { VehiculoFicha } from '../types'
 
-type Seccion = 'activas' | 'vendidas'
-
+/**
+ * Solo unidades activas (etapas 2 y 3 del ciclo: en reparación o en venta).
+ * En cuanto una unidad se vende sale de aquí — vive en Vendidos, sección
+ * propia y separada.
+ */
 export default function Inventario() {
   const { perfil } = useAuth()
   const navigate = useNavigate()
   const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(true)
-  const [seccion, setSeccion] = useState<Seccion>('activas')
 
   useEffect(() => {
     if (!supabase) return
     supabase
       .from('v_vehiculo_ficha')
       .select('*')
+      .neq('estado_comercial', 'vendido')
       .order('id_interno')
       .then(({ data }) => {
         setVehiculos((data ?? []) as VehiculoFicha[])
@@ -31,10 +34,7 @@ export default function Inventario() {
   const puedeCrear = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
   const q = busqueda.trim().toLowerCase()
 
-  const activas = vehiculos.filter((v) => v.estado_comercial !== 'vendido')
-  const vendidas = vehiculos.filter((v) => v.estado_comercial === 'vendido')
-  const enSeccion = seccion === 'activas' ? activas : vendidas
-  const filtrados = enSeccion.filter((v) =>
+  const filtrados = vehiculos.filter((v) =>
     !q || `${v.id_interno} ${v.marca} ${v.modelo} ${v.anio}`.toLowerCase().includes(q)
   )
 
@@ -50,22 +50,6 @@ export default function Inventario() {
             + Nueva unidad
           </Link>
         )}
-      </div>
-
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid #e4e0d8' }}>
-        {(['activas', 'vendidas'] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setSeccion(s)}
-            style={{
-              padding: '9px 14px', fontSize: 12.5, border: 'none', background: 'none', cursor: 'pointer',
-              borderBottom: seccion === s ? '2px solid #26302f' : '2px solid transparent',
-              fontWeight: seccion === s ? 500 : 400, color: seccion === s ? '#1c1b19' : '#8b8578',
-            }}
-          >
-            {s === 'activas' ? `Unidades activas · ${activas.length}` : `Unidades vendidas · ${vendidas.length}`}
-          </button>
-        ))}
       </div>
 
       <input
@@ -100,9 +84,7 @@ export default function Inventario() {
               </tr>
             ))}
             {filtrados.length === 0 && (
-              <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', color: '#8b8578' }}>
-                {seccion === 'activas' ? 'Sin unidades activas todavía.' : 'Sin unidades vendidas todavía.'}
-              </td></tr>
+              <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', color: '#8b8578' }}>Sin unidades activas todavía.</td></tr>
             )}
           </tbody>
         </table>

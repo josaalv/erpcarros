@@ -65,6 +65,12 @@ export interface VehiculoFicha {
   costo_total: number | null
   utilidad: number | null
   margen: number | null
+  /** Kilometraje corregido al terminar la reparación — el de llegada a
+   * veces viene alterado desde la subasta. */
+  kilometraje_final: number | null
+  descripcion_breve: string | null
+  indicaciones_comisionista: string | null
+  comision_ofrecida: number | null
 }
 
 export interface Gasto {
@@ -256,6 +262,14 @@ export interface Liquidacion {
   fecha_pago: string | null
 }
 
+export interface Subasta {
+  id: number
+  plataforma: string
+  fecha: string
+  lote: string | null
+  patio_origen: string | null
+}
+
 export interface EvaluacionPuja {
   id: number
   subasta_id: number | null
@@ -263,9 +277,13 @@ export interface EvaluacionPuja {
   marca: string
   modelo: string
   anio: number
+  version: string | null
+  kilometraje_llegada: number | null
+  torre: string | null
   danos_observados: string | null
   costo_reparacion_estimado: number
   precio_venta_esperado: number
+  margen_deseado: number | null
   techo_puja: number | null
   roi_proyectado: number | null
   roi_historico_segmento: number | null

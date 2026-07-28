@@ -15,11 +15,14 @@ const NAV_ADMIN_GERENCIA = [
   { to: '/en-proceso', label: 'En proceso' },
   { to: '/en-venta', label: 'En venta' },
   { to: '/ventas', label: 'Ventas' },
+  { to: '/vendidos', label: 'Vendidos' },
 ]
 
+// Calculadora desactivada: Posibles ofertas la reemplaza (mismo cálculo de
+// techo de puja, pero vinculado a una subasta real y a la compra que crea).
 const NAV_ADMIN = [
+  { to: '/posibles-ofertas', label: 'Posibles ofertas' },
   { to: '/socios', label: 'Socios' },
-  { to: '/calculadora', label: 'Calculadora' },
   { to: '/usuarios', label: 'Usuarios' },
 ]
 

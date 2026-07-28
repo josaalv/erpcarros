@@ -123,6 +123,23 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
    `anon`) para el selector de perfiles del login — mismo patrón
    (vista → función SECURITY DEFINER) que `robsen-salon` adoptó tras su
    propia auditoría de seguridad; ver comentarios en el archivo.
+9. (numeradas 009/010, ver archivos en `supabase/migrations/` para el
+   detalle: subida de documentos + categorías personalizadas + checklist
+   editable/borrable) y `011_permitir_eliminar_vehiculo.sql` — `ON DELETE
+   CASCADE`/`SET NULL` en todos los FK hacia `vehiculo(id)` para poder
+   borrar una unidad completa (ver sección "Qué falta" más abajo).
+10. `012_ciclo_posibles_ofertas_y_publicacion.sql` — columnas nuevas para
+    el ciclo de 4 etapas (ver sección dedicada más abajo): `version`,
+    `kilometraje_llegada`, `torre`, `margen_deseado` en `evaluacion_puja`;
+    `kilometraje_final`, `descripcion_breve`, `indicaciones_comisionista`,
+    `comision_ofrecida` en `vehiculo`.
+11. `013_exponer_campos_nuevos_en_vista_ficha.sql` — expone esas 4 columnas
+    nuevas de `vehiculo` en `v_vehiculo_ficha` (sin redacción por rol,
+    ninguna es tan sensible como `precio_minimo`/`costo_total`;
+    `comision_ofrecida` es justo lo que el comisionista debe ver). Ojo si
+    se vuelve a tocar esta vista: Postgres no deja reordenar/renombrar
+    columnas de una vista existente con `CREATE OR REPLACE VIEW` — las
+    columnas nuevas van siempre al final del `SELECT`, nunca intercaladas.
 
 **Datos reales cargados (es_demo=false):** 19 unidades del negocio real
 (V-1001 a V-1019) con su `compra`/`gasto` desglosado, tomadas de
@@ -144,19 +161,79 @@ motores. Antes de cualquier cambio de esquema, corre
 `get_advisors` (security) — es la convención de este desarrollador en
 todos sus proyectos con Supabase.
 
+## El ciclo de negocio completo (4 etapas)
+
+El flujo que el dueño describió y que ya está construido de punta a punta:
+
+1. **Posibles ofertas** (`src/screens/PosiblesOfertas.tsx`, admin-only —
+   RLS `subasta_admin`/`evaluacion_admin`): pre-compra. Se registra una
+   `subasta` (plataforma + fecha + lote/patio) y dentro de ella se
+   capturan las unidades que interesa ofertar (`evaluacion_puja`): marca,
+   modelo, año, versión, kilometraje de llegada (a veces viene alterado
+   desde la subasta, se corrige después con `kilometraje_final`), torre,
+   precio de mercado actual, presupuesto de reparación y margen deseado.
+   La pantalla calcula en vivo el techo de puja (misma fórmula que
+   `Calculadora.tsx`: `techo = precio_mercado − costo_reparación −
+   comisión_subasta(5000) − margen_deseado×precio_mercado`) y el ROI
+   proyectado contra el histórico de `v_roi_segmento` por banda de costo.
+   Las evaluaciones se agrupan por marca y luego por torre, como pidió el
+   usuario. Botón **"Adquirir"** (`AdquirirModal`): convierte una
+   evaluación en unidad real — crea el `vehiculo` (estado `comprado`,
+   ubicación `traslado`), crea la `compra` correspondiente, y marca la
+   evaluación `resultado = 'ganada'` con `vehiculo_id` para no perder el
+   vínculo. Este botón es el puente etapa 1 → etapa 2.
+2. **Inventario / Taller** (ya existía, es "la parte más importante" según
+   el usuario): documentación y gastos por fecha del vehículo ya
+   adquirido. Al terminar la reparación se captura `kilometraje_final` en
+   el Expediente (`EstadoEditor`, junto a estado comercial/documental) —
+   corrige el de llegada sin sobreescribirlo.
+3. **Publicación para venta** (dentro del Expediente, etapa 3): antes de
+   publicar, sección **"Margen para decidir precio de venta"**
+   (`MargenPublicacion`, admin-only) — se captura el precio de mercado
+   actual (cambia después de la reparación, por eso no se reutiliza el de
+   la evaluación de compra) y se compara en vivo contra `costo_total` ya
+   cerrado para ver utilidad/margen antes de fijar `precio_autorizado`
+   (ese campo se sigue editando desde "En venta", no aquí). Luego,
+   **"Publicación para venta / información para comisionistas"**
+   (`PublicacionForm`, admin/gerencia): `descripcion_breve`,
+   `indicaciones_comisionista`, `comision_ofrecida` — estos 3 campos
+   alimentan directo el catálogo del Portal de comisionista
+   (`Comisionista.tsx`), que ahora solo muestra unidades que llegaron al
+   umbral `listo` de `estado_proceso.orden` (mismo criterio que "En
+   venta") y no están vendidas — antes de eso no tiene sentido que el
+   comisionista la vea.
+4. **Venta / Vendidos** (etapa final): `Ventas.tsx` registra la venta
+   (precio acordado, cliente, comisionista + monto de comisión opcional
+   ya en el mismo formulario) y cierra el financiero (`cerrarFinanciero`:
+   calcula utilidad/margen/ROI reales contra `v_costo_vehiculo`, genera
+   `liquidacion` por socio, marca `estado_comercial = 'vendido'`). En
+   cuanto se marca vendida, la unidad sale de Inventario/En venta y
+   aparece solo en **`src/screens/Vendidos.tsx`** — sección propia y
+   separada de Inventario, con fecha de venta, canal, precio final,
+   comisionista/comisión, y (admin) utilidad/margen/ROI del cierre.
+
+**`Calculadora.tsx` quedó desactivada** (sin ruta ni nav, el archivo sigue
+en `src/screens/`): `PosiblesOfertas.tsx` la reemplaza con el mismo
+cálculo pero vinculado de verdad a una subasta real y a la compra que
+genera — la calculadora vieja dejaba evaluaciones huérfanas (sin
+`subasta_id`) y permitía marcar `resultado = 'ganada'` a mano sin crear
+nunca el vehículo real.
+
 ## Qué falta (no asumir que ya existe)
 
 - Pantallas construidas (`src/screens/`): Login (selector de perfiles +
   registro + recuperar/restablecer contraseña), Mi cuenta (cambiar
-  contraseña estando ya adentro), Panel, Inventario (catálogo/búsqueda),
-  Expediente del vehículo (estado comercial/documental, checklist de
-  documentación), alta de vehículo, captura de gasto, administración de
-  usuarios, En proceso, En venta, Socios y liquidación, Taller (kanban de
-  órdenes de trabajo), Consignación (lotes), Portal de comisionista
-  (Catálogo / Mis referidos / Mis comisiones), Ventas y cierre financiero
-  (registrar venta → cerrar financiero → genera `liquidacion` por socio
-  vía `v_participacion_socio`), Calculadora de puja (techo de puja + ROI
-  proyectado contra `v_roi_segmento`).
+  contraseña estando ya adentro), Panel, Posibles ofertas (etapa 1 del
+  ciclo, ver sección dedicada arriba), Inventario (catálogo/búsqueda, solo
+  unidades activas), Expediente del vehículo (estado comercial/documental
+  + kilometraje final, checklist de documentación, margen de publicación,
+  info para comisionistas), alta de vehículo, captura de gasto,
+  administración de usuarios, En proceso, En venta, Vendidos (etapa 4,
+  separada de Inventario), Socios y liquidación, Taller (kanban de órdenes
+  de trabajo, desactivado), Consignación (lotes, desactivado), Portal de
+  comisionista (Catálogo / Mis referidos / Mis comisiones), Ventas y
+  cierre financiero (registrar venta → cerrar financiero → genera
+  `liquidacion` por socio vía `v_participacion_socio`).
 - **Login con selector de perfiles** (mismo patrón que `robsen-salon`):
   `Login.tsx` llama `supabase.rpc('listar_perfiles_publicos')` (anon, sin
   sesión) para mostrar tarjetas de las cuentas activas; al elegir una se
@@ -229,10 +306,12 @@ todos sus proyectos con Supabase.
   reutilizar esa parte). Osea: `En venta` = vista general, con dos
   subvistas o filtros por ubicación (taller / consignación), no dos
   pantallas separadas sin relación.
-- **Inventario** tiene dos secciones (`Unidades activas` / `Unidades
-  vendidas`, `src/screens/Inventario.tsx`), separadas por
-  `estado_comercial = 'vendido'` — no por `estado_proceso`, para que
-  coincida con el mismo criterio que ya usa "En venta"/cierre financiero.
+- **Inventario solo muestra unidades activas** (`estado_comercial !=
+  'vendido'`, `src/screens/Inventario.tsx`) — antes tenía pestañas
+  "Unidades activas"/"Unidades vendidas" dentro de la misma pantalla, pero
+  con el ciclo de 4 etapas las vendidas se extrajeron a su propia sección
+  (`Vendidos.tsx`, ver sección del ciclo arriba) para que quedaran
+  realmente separadas de Inventario, no solo en una pestaña.
 - **Documentación** (dentro del Expediente) ya sube el archivo real, no
   solo el estado: bucket privado de Storage `documentos-vehiculo`
   (políticas RLS: solo `es_admin_o_gerencia()`, igual que la tabla

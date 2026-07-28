@@ -202,6 +202,7 @@ function VentaModal({ vehiculo, clientes, comisionistas, onClose, onGuardado }: 
 }) {
   const [clienteId, setClienteId] = useState('')
   const [comisionistaId, setComisionistaId] = useState('')
+  const [comisionMonto, setComisionMonto] = useState('')
   const [canal, setCanal] = useState<Venta['canal']>('directa')
   const [precio, setPrecio] = useState(vehiculo.precio_autorizado ? String(vehiculo.precio_autorizado) : '')
   const [formaPago, setFormaPago] = useState<Venta['forma_pago']>('transferencia')
@@ -214,14 +215,29 @@ function VentaModal({ vehiculo, clientes, comisionistas, onClose, onGuardado }: 
     if (!supabase) return
     setGuardando(true)
     setError(null)
-    const { error } = await supabase.from('venta').insert({
+    const { data: venta, error: errVenta } = await supabase.from('venta').insert({
       vehiculo_id: vehiculo.id,
       cliente_id: clienteId ? Number(clienteId) : null,
       comisionista_id: comisionistaId ? Number(comisionistaId) : null,
       canal, precio_acordado: Number(precio), forma_pago: formaPago, fecha_venta: fecha,
-    })
+    }).select().single()
+
+    if (errVenta || !venta) {
+      setGuardando(false)
+      setError(errVenta?.message ?? 'No se pudo registrar la venta.')
+      return
+    }
+
+    if (comisionistaId) {
+      await supabase.from('comision').insert({
+        venta_id: venta.id,
+        comisionista_id: Number(comisionistaId),
+        esquema: 'fijo',
+        monto_estimado: comisionMonto ? Number(comisionMonto) : null,
+      })
+    }
+
     setGuardando(false)
-    if (error) { setError(error.message); return }
     onGuardado()
   }
 
@@ -239,6 +255,9 @@ function VentaModal({ vehiculo, clientes, comisionistas, onClose, onGuardado }: 
           <option value="">Comisionista (opcional)…</option>
           {comisionistas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
+        {comisionistaId && (
+          <input type="number" step="0.01" placeholder="Monto de comisión (opcional)" value={comisionMonto} onChange={(e) => setComisionMonto(e.target.value)} style={inputStyle} />
+        )}
         <select value={canal} onChange={(e) => setCanal(e.target.value as Venta['canal'])} style={inputStyle}>
           {CANALES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>

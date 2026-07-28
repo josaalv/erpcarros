@@ -143,6 +143,14 @@ export default function Expediente() {
       />
 
       {perfil?.rol === 'admin' && (
+        <MargenPublicacion costoTotal={veh.costo_total} />
+      )}
+
+      {puedeEditarDocumentos && (
+        <PublicacionForm veh={veh} onGuardado={recargar} />
+      )}
+
+      {perfil?.rol === 'admin' && (
         <EliminarUnidad veh={veh} documentos={documentos} onEliminada={() => navigate('/inventario')} />
       )}
     </div>
@@ -506,7 +514,10 @@ const COMERCIAL_OPCIONES = ['no_publicado', 'publicado', 'en_consignacion', 'con
 const DOCUMENTAL_OPCIONES = ['incompleto', 'en_tramite', 'completo']
 
 /**
- * Cambiar estado comercial y documental de esta unidad. estado_proceso y
+ * Cambiar estado comercial y documental de esta unidad, y el kilometraje
+ * final (etapa 2→3 del ciclo: se captura al terminar la reparación porque
+ * el de llegada a veces viene alterado desde la subasta — kilometraje no
+ * se sobreescribe, kilometraje_final es un campo aparte). estado_proceso y
  * ubicación NO se editan aquí — se administran para todas las unidades a
  * la vez desde "En proceso" / "En venta", donde tiene más sentido verlas
  * en conjunto que unidad por unidad.
@@ -517,11 +528,14 @@ function EstadoEditor({ veh, onGuardado }: {
 }) {
   const [estadoComercial, setEstadoComercial] = useState(veh.estado_comercial)
   const [estadoDocumental, setEstadoDocumental] = useState(veh.estado_documental)
+  const [kilometrajeFinal, setKilometrajeFinal] = useState(veh.kilometraje_final !== null ? String(veh.kilometraje_final) : '')
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
 
+  const kilometrajeFinalActual = veh.kilometraje_final !== null ? String(veh.kilometraje_final) : ''
   const huboCambios = veh.estado_comercial !== estadoComercial || veh.estado_documental !== estadoDocumental
+    || kilometrajeFinal !== kilometrajeFinalActual
 
   async function guardar() {
     if (!supabase) return
@@ -532,6 +546,7 @@ function EstadoEditor({ veh, onGuardado }: {
     const { error } = await supabase.from('vehiculo').update({
       estado_comercial: estadoComercial,
       estado_documental: estadoDocumental,
+      kilometraje_final: kilometrajeFinal ? Number(kilometrajeFinal) : null,
     }).eq('id', veh.id)
 
     setGuardando(false)
@@ -545,15 +560,136 @@ function EstadoEditor({ veh, onGuardado }: {
       <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8b8578', marginBottom: 10 }}>
         Estado comercial y documental
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
         <select value={estadoComercial} onChange={(e) => setEstadoComercial(e.target.value)} style={selectStyle}>
           {COMERCIAL_OPCIONES.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
         <select value={estadoDocumental} onChange={(e) => setEstadoDocumental(e.target.value)} style={selectStyle}>
           {DOCUMENTAL_OPCIONES.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
+        <input
+          type="number"
+          placeholder="Kilometraje final (al terminar reparación)"
+          value={kilometrajeFinal}
+          onChange={(e) => setKilometrajeFinal(e.target.value)}
+          style={selectStyle}
+        />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          onClick={guardar}
+          disabled={!huboCambios || guardando}
+          style={{
+            padding: '7px 14px', fontSize: 12, border: 'none', cursor: huboCambios ? 'pointer' : 'default',
+            background: huboCambios ? '#26302f' : '#e8e4dc', color: huboCambios ? '#f3f1ec' : '#a09889',
+          }}
+        >
+          {guardando ? 'Guardando…' : 'Guardar cambios'}
+        </button>
+        {ok && !huboCambios && <span style={{ fontSize: 11.5, color: 'oklch(0.45 0.09 150)' }}>Guardado ✓</span>}
+        {error && <span style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</span>}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Margen para decidir el precio de venta (etapa 3): el precio de mercado
+ * cambia después de la reparación, así que se captura aquí como valor
+ * transitorio (no se guarda) contra el costo_total ya cerrado — el
+ * administrador ve la utilidad/margen resultante antes de fijar
+ * precio_autorizado (que se edita en "En venta").
+ */
+function MargenPublicacion({ costoTotal }: { costoTotal: number | null }) {
+  const [precioMercado, setPrecioMercado] = useState('')
+  const precio = Number(precioMercado) || 0
+  const costo = costoTotal ?? 0
+  const utilidad = precio > 0 ? precio - costo : null
+  const margen = precio > 0 ? (precio - costo) / precio : null
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e4e0d8', padding: 14, marginTop: 28 }}>
+      <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8b8578', marginBottom: 10 }}>
+        Margen para decidir precio de venta
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <label style={{ fontSize: 11, color: '#55524b' }}>
+          Precio de mercado actual
+          <input
+            type="number" step="0.01" value={precioMercado}
+            onChange={(e) => setPrecioMercado(e.target.value)}
+            style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginTop: 4, display: 'block' }}
+          />
+        </label>
+        <Dato label="Costo total" value={mxn(costo)} />
+        <Dato label="Utilidad estimada" value={utilidad !== null ? mxn(utilidad) : '—'} />
+        <Dato label="Margen estimado" value={margen !== null ? porcentaje(margen) : '—'} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Información de publicación para comisionistas (etapa 3): lo que el
+ * portal de comisionista muestra en su catálogo. comision_ofrecida es
+ * distinta de la comisión real que se liquida al cerrar una venta
+ * específica (tabla comision) — esta es la que se ofrece de entrada.
+ */
+function PublicacionForm({ veh, onGuardado }: { veh: VehiculoFicha; onGuardado: () => void }) {
+  const [descripcion, setDescripcion] = useState(veh.descripcion_breve ?? '')
+  const [indicaciones, setIndicaciones] = useState(veh.indicaciones_comisionista ?? '')
+  const [comision, setComision] = useState(veh.comision_ofrecida !== null ? String(veh.comision_ofrecida) : '')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [ok, setOk] = useState(false)
+
+  const comisionActual = veh.comision_ofrecida !== null ? String(veh.comision_ofrecida) : ''
+  const huboCambios = descripcion !== (veh.descripcion_breve ?? '') || indicaciones !== (veh.indicaciones_comisionista ?? '')
+    || comision !== comisionActual
+
+  async function guardar() {
+    if (!supabase) return
+    setGuardando(true)
+    setError(null)
+    setOk(false)
+
+    const { error } = await supabase.from('vehiculo').update({
+      descripcion_breve: descripcion.trim() || null,
+      indicaciones_comisionista: indicaciones.trim() || null,
+      comision_ofrecida: comision ? Number(comision) : null,
+    }).eq('id', veh.id)
+
+    setGuardando(false)
+    if (error) { setError(error.message); return }
+    setOk(true)
+    onGuardado()
+  }
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e4e0d8', padding: 14, marginTop: 16 }}>
+      <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8b8578', marginBottom: 10 }}>
+        Publicación para venta / información para comisionistas
+      </div>
+      <textarea
+        placeholder="Descripción breve"
+        value={descripcion}
+        onChange={(e) => setDescripcion(e.target.value)}
+        rows={2}
+        style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8, resize: 'vertical', display: 'block' }}
+      />
+      <textarea
+        placeholder="Indicaciones para comisionistas"
+        value={indicaciones}
+        onChange={(e) => setIndicaciones(e.target.value)}
+        rows={2}
+        style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8, resize: 'vertical', display: 'block' }}
+      />
+      <input
+        type="number" step="0.01" placeholder="Comisión ofrecida"
+        value={comision} onChange={(e) => setComision(e.target.value)}
+        style={{ ...inputStyle, width: 220 }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
         <button
           onClick={guardar}
           disabled={!huboCambios || guardando}

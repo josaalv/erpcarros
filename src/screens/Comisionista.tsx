@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
+import { useCatalogos } from '../lib/catalogos'
 import { mxn } from '../lib/helpers'
 import { inputStyle, th, td, btnPrimario } from '../lib/ui'
 import { Modal, FormBotones } from '../components/Ui'
@@ -15,6 +16,7 @@ type ProspectoConCliente = Prospecto & { cliente?: Cliente | null }
  */
 export default function Comisionista() {
   const { session } = useAuth()
+  const { estados, cargando: cargandoCatalogos } = useCatalogos()
   const [tab, setTab] = useState<'catalogo' | 'referidos' | 'comisiones'>('referidos')
   const [yo, setYo] = useState<TComisionista | null>(null)
   const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
@@ -40,7 +42,17 @@ export default function Comisionista() {
 
   useEffect(() => { recargar() }, [session])
 
-  if (cargando) return <p>Cargando…</p>
+  if (cargando || cargandoCatalogos) return <p>Cargando…</p>
+
+  // Catálogo: solo unidades que ya llegaron a la etapa de publicación (listo
+  // para venta) y no se han vendido — la información de comisionistas no
+  // tiene sentido mientras la unidad sigue en reparación.
+  const umbralListo = estados.find((e) => e.clave === 'listo')?.orden ?? 70
+  const publicadas = vehiculos.filter((v) => {
+    if (v.estado_comercial === 'vendido') return false
+    const estado = estados.find((e) => e.id === v.estado_proceso_id)
+    return estado && !estado.es_final && estado.orden >= umbralListo
+  })
 
   return (
     <div style={{ maxWidth: 900 }}>
@@ -66,18 +78,20 @@ export default function Comisionista() {
       {tab === 'catalogo' && (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
           <thead>
-            <tr style={{ background: '#faf9f6' }}>{['Unidad', 'Km', 'Estado', 'Precio'].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+            <tr style={{ background: '#faf9f6' }}>{['Unidad', 'Km', 'Descripción', 'Indicaciones', 'Precio', 'Comisión'].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {vehiculos.map((v) => (
+            {publicadas.map((v) => (
               <tr key={v.id} style={{ borderTop: '1px solid #f0ede6' }}>
                 <td style={td}><Link to={`/vehiculo/${v.id}`} style={{ color: '#1c1b19' }}>{v.marca} {v.modelo} {v.anio} · {v.id_interno}</Link></td>
-                <td style={td}>{v.kilometraje?.toLocaleString('es-MX') ?? '—'} km</td>
-                <td style={td}>{v.estado_comercial}</td>
+                <td style={td}>{(v.kilometraje_final ?? v.kilometraje)?.toLocaleString('es-MX') ?? '—'} km</td>
+                <td style={td}>{v.descripcion_breve ?? '—'}</td>
+                <td style={td}>{v.indicaciones_comisionista ?? '—'}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{mxn(v.precio_autorizado)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{mxn(v.comision_ofrecida)}</td>
               </tr>
             ))}
-            {vehiculos.length === 0 && <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#8b8578' }}>Sin unidades disponibles.</td></tr>}
+            {publicadas.length === 0 && <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', color: '#8b8578' }}>Sin unidades publicadas todavía.</td></tr>}
           </tbody>
         </table>
       )}
@@ -136,7 +150,7 @@ export default function Comisionista() {
       {abrirReferido && yo && (
         <ReferidoModal
           comisionistaId={yo.id}
-          vehiculos={vehiculos}
+          vehiculos={publicadas}
           onClose={() => setAbrirReferido(false)}
           onGuardado={() => { setAbrirReferido(false); recargar() }}
         />
