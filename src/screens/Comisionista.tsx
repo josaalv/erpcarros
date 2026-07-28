@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
+import { useBorrador } from '../lib/useBorrador'
 import { mxn } from '../lib/helpers'
 import { inputStyle, th, td, btnPrimario } from '../lib/ui'
 import { Modal, FormBotones } from '../components/Ui'
@@ -165,9 +166,10 @@ function ReferidoModal({ comisionistaId, vehiculos, onClose, onGuardado }: {
   onClose: () => void
   onGuardado: () => void
 }) {
-  const [nombre, setNombre] = useState('')
-  const [telefono, setTelefono] = useState('')
-  const [vehiculoId, setVehiculoId] = useState('')
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:referido:${comisionistaId}`, {
+    nombre: '', telefono: '', vehiculoId: '',
+  })
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -179,7 +181,7 @@ function ReferidoModal({ comisionistaId, vehiculos, onClose, onGuardado }: {
 
     const { data: cliente, error: errCliente } = await supabase
       .from('cliente')
-      .insert({ nombre, telefono: telefono || null, origen: 'referido' })
+      .insert({ nombre: form.nombre, telefono: form.telefono || null, origen: 'referido' })
       .select()
       .single()
 
@@ -191,7 +193,7 @@ function ReferidoModal({ comisionistaId, vehiculos, onClose, onGuardado }: {
 
     const { error: errProspecto } = await supabase.from('prospecto').insert({
       cliente_id: cliente.id,
-      vehiculo_id: vehiculoId ? Number(vehiculoId) : null,
+      vehiculo_id: form.vehiculoId ? Number(form.vehiculoId) : null,
       comisionista_id: comisionistaId,
       etapa: 'nuevo',
       vence_atribucion: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
@@ -199,6 +201,7 @@ function ReferidoModal({ comisionistaId, vehiculos, onClose, onGuardado }: {
 
     setGuardando(false)
     if (errProspecto) { setError(errProspecto.message); return }
+    limpiarBorrador()
     onGuardado()
   }
 
@@ -206,9 +209,9 @@ function ReferidoModal({ comisionistaId, vehiculos, onClose, onGuardado }: {
     <Modal onClose={onClose}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Nuevo referido</h3>
-        <input required placeholder="Nombre del cliente" value={nombre} onChange={(e) => setNombre(e.target.value)} style={inputStyle} />
-        <input placeholder="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} style={inputStyle} />
-        <select value={vehiculoId} onChange={(e) => setVehiculoId(e.target.value)} style={inputStyle}>
+        <input required placeholder="Nombre del cliente" value={form.nombre} onChange={(e) => set('nombre', e.target.value)} style={inputStyle} />
+        <input placeholder="Teléfono" value={form.telefono} onChange={(e) => set('telefono', e.target.value)} style={inputStyle} />
+        <select value={form.vehiculoId} onChange={(e) => set('vehiculoId', e.target.value)} style={inputStyle}>
           <option value="">Unidad de interés (opcional)…</option>
           {vehiculos.map((v) => <option key={v.id} value={v.id}>{v.id_interno} · {v.marca} {v.modelo} {v.anio}</option>)}
         </select>

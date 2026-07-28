@@ -2,31 +2,33 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
+import { useBorrador } from '../lib/useBorrador'
 import { mxn, porcentaje } from '../lib/helpers'
-import { inputStyle, th, td, btnPrimario, btnSecundario } from '../lib/ui'
+import { inputStyle, th, td, btnPrimario } from '../lib/ui'
 import { Modal, FormBotones } from '../components/Ui'
 import type { Venta, VehiculoFicha, Cliente, Comisionista, CierreFinanciero, Comision } from '../types'
 
 type VentaConVehiculo = Venta & { vehiculo?: { id_interno: string; marca: string; modelo: string; anio: number } | null }
 
-const CANALES: Venta['canal'][] = ['directa', 'consignacion', 'comisionista', 'anuncio']
+export const CANALES: Venta['canal'][] = ['directa', 'consignacion', 'comisionista', 'anuncio']
 const FORMAS_PAGO: Venta['forma_pago'][] = ['efectivo', 'transferencia', 'financiera', 'toma_a_cuenta', 'mixto']
 
 /**
- * Venta y cierre financiero. Registrar venta: admin/gerencia (venta_write).
+ * Cierre financiero de ventas ya registradas — solo muestra unidades que
+ * YA tienen una venta en curso (cambiando su estado hacia vendido), no las
+ * que están simplemente publicadas sin comprador todavía. "Registrar
+ * venta" vive en "En venta" (EnVenta.tsx), junto a donde se administra el
+ * resto del estado comercial de las unidades listas para vender —
+ * VentaModal se exporta desde aquí para que ambas pantallas la reutilicen.
  * Cerrar financiero y generar liquidación de socios: solo admin — es el
  * paso que reparte utilidad real, mismo criterio que RN-12 con precio_minimo.
  */
 export default function Ventas() {
-  const { perfil } = useAuth()
-  const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
+  const { perfil, session } = useAuth()
   const [ventas, setVentas] = useState<VentaConVehiculo[]>([])
   const [cierres, setCierres] = useState<CierreFinanciero[]>([])
   const [comisiones, setComisiones] = useState<Comision[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [comisionistas, setComisionistas] = useState<Comisionista[]>([])
   const [cargando, setCargando] = useState(true)
-  const [ventaParaRegistrar, setVentaParaRegistrar] = useState<VehiculoFicha | null>(null)
   const [cerrando, setCerrando] = useState<number | null>(null)
   const [errorCierre, setErrorCierre] = useState<string | null>(null)
 
@@ -34,29 +36,21 @@ export default function Ventas() {
 
   async function recargar() {
     if (!supabase) return
-    const [v, ve, ci, co, cl, cm] = await Promise.all([
-      supabase.from('v_vehiculo_ficha').select('*').order('id_interno'),
+    const [ve, ci, co] = await Promise.all([
       supabase.from('venta').select('*, vehiculo:vehiculo_id(id_interno, marca, modelo, anio)').order('fecha_venta', { ascending: false }),
       supabase.from('cierre_financiero').select('*'),
       supabase.from('comision').select('*'),
-      supabase.from('cliente').select('*').order('nombre'),
-      supabase.from('comisionista').select('*').order('nombre'),
     ])
-    setVehiculos((v.data ?? []) as VehiculoFicha[])
     setVentas((ve.data ?? []) as unknown as VentaConVehiculo[])
     setCierres((ci.data ?? []) as CierreFinanciero[])
     setComisiones((co.data ?? []) as Comision[])
-    setClientes((cl.data ?? []) as Cliente[])
-    setComisionistas((cm.data ?? []) as Comisionista[])
     setCargando(false)
   }
 
   useEffect(() => { recargar() }, [])
 
-  const disponibles = vehiculos.filter((v) => v.estado_comercial !== 'vendido' && !ventas.some((ve) => ve.vehiculo_id === v.id && ve.estado !== 'cancelada'))
-
   async function cerrarFinanciero(venta: VentaConVehiculo) {
-    if (!supabase) return
+    if (!supabase || !session) return
     setErrorCierre(null)
     setCerrando(venta.id)
 
@@ -84,6 +78,7 @@ export default function Ventas() {
       roi,
       dias_inventario: diasInventario,
       canal_venta: venta.canal,
+      cerrado_por: session.user.id,
     }).select().single()
 
     if (errCierre || !cierre) {
@@ -120,28 +115,11 @@ export default function Ventas() {
 
   return (
     <div style={{ maxWidth: 960 }}>
-      <h1 style={{ font: '400 26px Georgia, serif', margin: '0 0 16px' }}>Ventas y cierre financiero</h1>
+      <h1 style={{ font: '400 26px Georgia, serif', margin: '0 0 4px' }}>Ventas y cierre financiero</h1>
+      <p style={{ color: '#8b8578', fontSize: 12.5, marginTop: 0, marginBottom: 20 }}>
+        Unidades que ya tienen una venta en curso. Para registrar una venta nueva, ve a "En venta".
+      </p>
 
-      <h2 style={{ font: '500 15px "IBM Plex Sans"', borderBottom: '1.5px solid #26302f', paddingBottom: 8, marginBottom: 4 }}>
-        Unidades disponibles
-      </h2>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff', marginBottom: 28 }}>
-        <thead><tr style={{ background: '#faf9f6' }}>{['Unidad', 'Precio autorizado', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
-        <tbody>
-          {disponibles.map((v) => (
-            <tr key={v.id} style={{ borderTop: '1px solid #f0ede6' }}>
-              <td style={td}><Link to={`/vehiculo/${v.id}`} style={{ color: '#1c1b19' }}>{v.marca} {v.modelo} {v.anio} · {v.id_interno}</Link></td>
-              <td style={{ ...td, textAlign: 'right' }}>{mxn(v.precio_autorizado)}</td>
-              <td style={{ ...td, textAlign: 'right' }}><button onClick={() => setVentaParaRegistrar(v)} style={btnSecundario}>Registrar venta</button></td>
-            </tr>
-          ))}
-          {disponibles.length === 0 && <tr><td colSpan={3} style={{ padding: 16, textAlign: 'center', color: '#8b8578' }}>Todas las unidades activas ya tienen venta registrada.</td></tr>}
-        </tbody>
-      </table>
-
-      <h2 style={{ font: '500 15px "IBM Plex Sans"', borderBottom: '1.5px solid #26302f', paddingBottom: 8, marginBottom: 4 }}>
-        Ventas registradas
-      </h2>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
         <thead>
           <tr style={{ background: '#faf9f6' }}>{['Unidad', 'Canal', 'Precio acordado', 'Estado', esAdmin ? 'Cierre financiero' : null].filter(Boolean).map((h) => <th key={h} style={th}>{h}</th>)}</tr>
@@ -179,34 +157,25 @@ export default function Ventas() {
         </tbody>
       </table>
       {errorCierre && <p style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)', marginTop: 8 }}>{errorCierre}</p>}
-
-      {ventaParaRegistrar && (
-        <VentaModal
-          vehiculo={ventaParaRegistrar}
-          clientes={clientes}
-          comisionistas={comisionistas}
-          onClose={() => setVentaParaRegistrar(null)}
-          onGuardado={() => { setVentaParaRegistrar(null); recargar() }}
-        />
-      )}
     </div>
   )
 }
 
-function VentaModal({ vehiculo, clientes, comisionistas, onClose, onGuardado }: {
+export function VentaModal({ vehiculo, clientes, comisionistas, onClose, onGuardado }: {
   vehiculo: VehiculoFicha
   clientes: Cliente[]
   comisionistas: Comisionista[]
   onClose: () => void
   onGuardado: () => void
 }) {
-  const [clienteId, setClienteId] = useState('')
-  const [comisionistaId, setComisionistaId] = useState('')
-  const [comisionMonto, setComisionMonto] = useState('')
-  const [canal, setCanal] = useState<Venta['canal']>('directa')
-  const [precio, setPrecio] = useState(vehiculo.precio_autorizado ? String(vehiculo.precio_autorizado) : '')
-  const [formaPago, setFormaPago] = useState<Venta['forma_pago']>('transferencia')
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:venta:${vehiculo.id}`, {
+    clienteId: '', comisionistaId: '', comisionMonto: '',
+    canal: 'directa' as Venta['canal'],
+    precio: vehiculo.precio_autorizado ? String(vehiculo.precio_autorizado) : '',
+    formaPago: 'transferencia' as Venta['forma_pago'],
+    fecha: new Date().toISOString().slice(0, 10),
+  })
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -217,9 +186,9 @@ function VentaModal({ vehiculo, clientes, comisionistas, onClose, onGuardado }: 
     setError(null)
     const { data: venta, error: errVenta } = await supabase.from('venta').insert({
       vehiculo_id: vehiculo.id,
-      cliente_id: clienteId ? Number(clienteId) : null,
-      comisionista_id: comisionistaId ? Number(comisionistaId) : null,
-      canal, precio_acordado: Number(precio), forma_pago: formaPago, fecha_venta: fecha,
+      cliente_id: form.clienteId ? Number(form.clienteId) : null,
+      comisionista_id: form.comisionistaId ? Number(form.comisionistaId) : null,
+      canal: form.canal, precio_acordado: Number(form.precio), forma_pago: form.formaPago, fecha_venta: form.fecha,
     }).select().single()
 
     if (errVenta || !venta) {
@@ -228,16 +197,17 @@ function VentaModal({ vehiculo, clientes, comisionistas, onClose, onGuardado }: 
       return
     }
 
-    if (comisionistaId) {
+    if (form.comisionistaId) {
       await supabase.from('comision').insert({
         venta_id: venta.id,
-        comisionista_id: Number(comisionistaId),
+        comisionista_id: Number(form.comisionistaId),
         esquema: 'fijo',
-        monto_estimado: comisionMonto ? Number(comisionMonto) : null,
+        monto_estimado: form.comisionMonto ? Number(form.comisionMonto) : null,
       })
     }
 
     setGuardando(false)
+    limpiarBorrador()
     onGuardado()
   }
 
@@ -247,25 +217,25 @@ function VentaModal({ vehiculo, clientes, comisionistas, onClose, onGuardado }: 
         <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Registrar venta</h3>
         <p style={{ margin: 0, fontSize: 12, color: '#8b8578' }}>{vehiculo.marca} {vehiculo.modelo} {vehiculo.anio} · {vehiculo.id_interno}</p>
 
-        <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} style={inputStyle}>
+        <select value={form.clienteId} onChange={(e) => set('clienteId', e.target.value)} style={inputStyle}>
           <option value="">Cliente (opcional)…</option>
           {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
-        <select value={comisionistaId} onChange={(e) => setComisionistaId(e.target.value)} style={inputStyle}>
+        <select value={form.comisionistaId} onChange={(e) => set('comisionistaId', e.target.value)} style={inputStyle}>
           <option value="">Comisionista (opcional)…</option>
           {comisionistas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
-        {comisionistaId && (
-          <input type="number" step="0.01" placeholder="Monto de comisión (opcional)" value={comisionMonto} onChange={(e) => setComisionMonto(e.target.value)} style={inputStyle} />
+        {form.comisionistaId && (
+          <input type="number" step="0.01" placeholder="Monto de comisión (opcional)" value={form.comisionMonto} onChange={(e) => set('comisionMonto', e.target.value)} style={inputStyle} />
         )}
-        <select value={canal} onChange={(e) => setCanal(e.target.value as Venta['canal'])} style={inputStyle}>
+        <select value={form.canal} onChange={(e) => set('canal', e.target.value as Venta['canal'])} style={inputStyle}>
           {CANALES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <input required type="number" step="0.01" placeholder="Precio acordado" value={precio} onChange={(e) => setPrecio(e.target.value)} style={inputStyle} />
-        <select value={formaPago} onChange={(e) => setFormaPago(e.target.value as Venta['forma_pago'])} style={inputStyle}>
+        <input required type="number" step="0.01" placeholder="Precio acordado" value={form.precio} onChange={(e) => set('precio', e.target.value)} style={inputStyle} />
+        <select value={form.formaPago} onChange={(e) => set('formaPago', e.target.value as Venta['forma_pago'])} style={inputStyle}>
           {FORMAS_PAGO.map((f) => <option key={f} value={f}>{f}</option>)}
         </select>
-        <input required type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} />
+        <input required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} style={inputStyle} />
 
         {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
         <FormBotones onClose={onClose} guardando={guardando} />

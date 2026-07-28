@@ -249,6 +249,14 @@ export interface CierreFinanciero {
   fecha_cierre: string
 }
 
+export interface Reapertura {
+  id: number
+  cierre_id: number
+  motivo: string
+  usuario_id: string
+  ocurrido: string
+}
+
 export interface Liquidacion {
   id: number
   cierre_id: number

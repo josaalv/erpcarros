@@ -2,10 +2,14 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { ROL_LABEL } from '../lib/helpers'
 
-const NAV = [
-  { to: '/', label: 'Panel' },
-  { to: '/inventario', label: 'Inventario' },
-]
+const NAV = [{ to: '/', label: 'Panel' }]
+
+// Posibles ofertas va justo debajo de Panel: es el primer paso del ciclo
+// (etapa 1, pre-compra) y admin-only — antes de Inventario, que es la
+// etapa 2 en adelante.
+const NAV_POSIBLES_OFERTAS = [{ to: '/posibles-ofertas', label: 'Posibles ofertas' }]
+
+const NAV_INVENTARIO = [{ to: '/inventario', label: 'Inventario' }]
 
 // Taller y Consignación desactivadas a propósito: todavía no se define qué
 // hacen esas pantallas a futuro. El código sigue en src/screens/ sin tocar
@@ -21,7 +25,6 @@ const NAV_ADMIN_GERENCIA = [
 // Calculadora desactivada: Posibles ofertas la reemplaza (mismo cálculo de
 // techo de puja, pero vinculado a una subasta real y a la compra que crea).
 const NAV_ADMIN = [
-  { to: '/posibles-ofertas', label: 'Posibles ofertas' },
   { to: '/socios', label: 'Socios' },
   { to: '/usuarios', label: 'Usuarios' },
 ]
@@ -32,6 +35,8 @@ export default function Layout() {
   const { perfil, signOut } = useAuth()
   const nav = [
     ...NAV,
+    ...(perfil?.rol === 'admin' ? NAV_POSIBLES_OFERTAS : []),
+    ...NAV_INVENTARIO,
     ...(perfil?.rol === 'admin' || perfil?.rol === 'gerencia' ? NAV_ADMIN_GERENCIA : []),
     ...(perfil?.rol === 'admin' ? NAV_ADMIN : []),
     ...(perfil?.rol === 'comisionista' ? NAV_COMISIONISTA : []),

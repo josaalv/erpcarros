@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
 import { mxn, porcentaje } from '../lib/helpers'
+import { useBorrador } from '../lib/useBorrador'
 import { Modal } from '../components/Ui'
 import type { VehiculoFicha, Gasto, TipoDocumento, Documento, Aportacion, Socio } from '../types'
 
@@ -636,16 +637,19 @@ function MargenPublicacion({ costoTotal }: { costoTotal: number | null }) {
  * específica (tabla comision) — esta es la que se ofrece de entrada.
  */
 function PublicacionForm({ veh, onGuardado }: { veh: VehiculoFicha; onGuardado: () => void }) {
-  const [descripcion, setDescripcion] = useState(veh.descripcion_breve ?? '')
-  const [indicaciones, setIndicaciones] = useState(veh.indicaciones_comisionista ?? '')
-  const [comision, setComision] = useState(veh.comision_ofrecida !== null ? String(veh.comision_ofrecida) : '')
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:publicacion:${veh.id}`, {
+    descripcion: veh.descripcion_breve ?? '',
+    indicaciones: veh.indicaciones_comisionista ?? '',
+    comision: veh.comision_ofrecida !== null ? String(veh.comision_ofrecida) : '',
+  })
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
 
   const comisionActual = veh.comision_ofrecida !== null ? String(veh.comision_ofrecida) : ''
-  const huboCambios = descripcion !== (veh.descripcion_breve ?? '') || indicaciones !== (veh.indicaciones_comisionista ?? '')
-    || comision !== comisionActual
+  const huboCambios = form.descripcion !== (veh.descripcion_breve ?? '') || form.indicaciones !== (veh.indicaciones_comisionista ?? '')
+    || form.comision !== comisionActual
 
   async function guardar() {
     if (!supabase) return
@@ -654,14 +658,15 @@ function PublicacionForm({ veh, onGuardado }: { veh: VehiculoFicha; onGuardado: 
     setOk(false)
 
     const { error } = await supabase.from('vehiculo').update({
-      descripcion_breve: descripcion.trim() || null,
-      indicaciones_comisionista: indicaciones.trim() || null,
-      comision_ofrecida: comision ? Number(comision) : null,
+      descripcion_breve: form.descripcion.trim() || null,
+      indicaciones_comisionista: form.indicaciones.trim() || null,
+      comision_ofrecida: form.comision ? Number(form.comision) : null,
     }).eq('id', veh.id)
 
     setGuardando(false)
     if (error) { setError(error.message); return }
     setOk(true)
+    limpiarBorrador()
     onGuardado()
   }
 
@@ -672,21 +677,21 @@ function PublicacionForm({ veh, onGuardado }: { veh: VehiculoFicha; onGuardado: 
       </div>
       <textarea
         placeholder="Descripción breve"
-        value={descripcion}
-        onChange={(e) => setDescripcion(e.target.value)}
+        value={form.descripcion}
+        onChange={(e) => set('descripcion', e.target.value)}
         rows={2}
         style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8, resize: 'vertical', display: 'block' }}
       />
       <textarea
         placeholder="Indicaciones para comisionistas"
-        value={indicaciones}
-        onChange={(e) => setIndicaciones(e.target.value)}
+        value={form.indicaciones}
+        onChange={(e) => set('indicaciones', e.target.value)}
         rows={2}
         style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8, resize: 'vertical', display: 'block' }}
       />
       <input
         type="number" step="0.01" placeholder="Comisión ofrecida"
-        value={comision} onChange={(e) => setComision(e.target.value)}
+        value={form.comision} onChange={(e) => set('comision', e.target.value)}
         style={{ ...inputStyle, width: 220 }}
       />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
@@ -729,10 +734,10 @@ function GastoModal({ vehiculoId, categorias, onClose, onGuardado }: {
   onClose: () => void
   onGuardado: () => void
 }) {
-  const [descripcion, setDescripcion] = useState('')
-  const [categoriaId, setCategoriaId] = useState('')
-  const [importe, setImporte] = useState('')
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:gasto:${vehiculoId}`, {
+    descripcion: '', categoriaId: '', importe: '', fecha: new Date().toISOString().slice(0, 10),
+  })
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -744,15 +749,16 @@ function GastoModal({ vehiculoId, categorias, onClose, onGuardado }: {
 
     const { error } = await supabase.from('gasto').insert({
       vehiculo_id: vehiculoId,
-      categoria_id: Number(categoriaId),
-      descripcion,
-      importe: Number(importe),
-      fecha,
+      categoria_id: Number(form.categoriaId),
+      descripcion: form.descripcion,
+      importe: Number(form.importe),
+      fecha: form.fecha,
       pagador_tipo: 'empresa',
     })
 
     setGuardando(false)
     if (error) { setError(error.message); return }
+    limpiarBorrador()
     onGuardado()
   }
 
@@ -761,15 +767,15 @@ function GastoModal({ vehiculoId, categorias, onClose, onGuardado }: {
       <form onSubmit={onSubmit} onClick={(e) => e.stopPropagation()} style={{ background: '#fff', padding: 22, width: 320, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Nuevo gasto</h3>
 
-        <input required placeholder="Descripción" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} style={inputStyle} />
+        <input required placeholder="Descripción" value={form.descripcion} onChange={(e) => set('descripcion', e.target.value)} style={inputStyle} />
 
-        <select required value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} style={inputStyle}>
+        <select required value={form.categoriaId} onChange={(e) => set('categoriaId', e.target.value)} style={inputStyle}>
           <option value="">Categoría…</option>
           {categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
 
-        <input required type="number" step="0.01" placeholder="Importe" value={importe} onChange={(e) => setImporte(e.target.value)} style={inputStyle} />
-        <input required type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} />
+        <input required type="number" step="0.01" placeholder="Importe" value={form.importe} onChange={(e) => set('importe', e.target.value)} style={inputStyle} />
+        <input required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} style={inputStyle} />
 
         {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
 
@@ -865,9 +871,12 @@ function AportacionVehiculoModal({ vehiculoId, socios, aportacion, onClose, onGu
   onClose: () => void
   onGuardado: () => void
 }) {
-  const [socioId, setSocioId] = useState(aportacion ? String(aportacion.socio_id) : '')
-  const [monto, setMonto] = useState(aportacion ? String(aportacion.monto) : '')
-  const [fecha, setFecha] = useState(aportacion?.fecha ?? new Date().toISOString().slice(0, 10))
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:aportacion-vehiculo:${vehiculoId}:${aportacion?.id ?? 'nueva'}`, {
+    socioId: aportacion ? String(aportacion.socio_id) : '',
+    monto: aportacion ? String(aportacion.monto) : '',
+    fecha: aportacion?.fecha ?? new Date().toISOString().slice(0, 10),
+  })
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -876,12 +885,13 @@ function AportacionVehiculoModal({ vehiculoId, socios, aportacion, onClose, onGu
     if (!supabase) return
     setGuardando(true)
     setError(null)
-    const datos = { socio_id: Number(socioId), vehiculo_id: vehiculoId, monto: Number(monto), fecha }
+    const datos = { socio_id: Number(form.socioId), vehiculo_id: vehiculoId, monto: Number(form.monto), fecha: form.fecha }
     const { error } = aportacion
       ? await supabase.from('aportacion').update(datos).eq('id', aportacion.id)
       : await supabase.from('aportacion').insert(datos)
     setGuardando(false)
     if (error) { setError(error.message); return }
+    limpiarBorrador()
     onGuardado()
   }
 
@@ -889,12 +899,12 @@ function AportacionVehiculoModal({ vehiculoId, socios, aportacion, onClose, onGu
     <Modal onClose={onClose}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>{aportacion ? 'Editar capital' : 'Asignar socio a esta unidad'}</h3>
-        <select required value={socioId} onChange={(e) => setSocioId(e.target.value)} style={inputStyle}>
+        <select required value={form.socioId} onChange={(e) => set('socioId', e.target.value)} style={inputStyle}>
           <option value="">Socio…</option>
           {socios.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
-        <input required type="number" step="0.01" placeholder="Monto aportado" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} />
-        <input required type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} />
+        <input required type="number" step="0.01" placeholder="Monto aportado" value={form.monto} onChange={(e) => set('monto', e.target.value)} style={inputStyle} />
+        <input required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} style={inputStyle} />
         {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
         <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
           <button type="button" onClick={onClose} style={{ flex: 1, padding: 10, background: '#f4f1ea', border: 'none', cursor: 'pointer' }}>Cancelar</button>

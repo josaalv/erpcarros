@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useCatalogos } from '../lib/catalogos'
 import { useAuth } from '../lib/auth'
+import { useBorrador } from '../lib/useBorrador'
 
 /**
  * Alta de vehículo (RN-02: cada vehículo es un centro de costos
@@ -22,7 +23,7 @@ export default function VehiculoNuevo() {
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [form, setForm] = useState({
+  const [form, setForm, limpiarBorrador] = useBorrador('borrador:vehiculo-nuevo', {
     id_interno: '', marca: '', modelo: '', anio: new Date().getFullYear(),
     kilometraje: '', color: '', transmision: 'manual',
     fecha_compra: '', precio_minimo: '', precio_autorizado: '',
@@ -65,6 +66,7 @@ export default function VehiculoNuevo() {
       return
     }
 
+    limpiarBorrador()
     navigate(`/vehiculo/${data.id}`)
   }
 

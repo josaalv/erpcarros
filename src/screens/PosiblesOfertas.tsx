@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useCatalogos } from '../lib/catalogos'
+import { useBorrador } from '../lib/useBorrador'
 import { mxn, porcentaje } from '../lib/helpers'
 import { inputStyle, th, td, btnPrimario, btnSecundario, selectStyle } from '../lib/ui'
 import { Modal, FormBotones } from '../components/Ui'
@@ -194,10 +195,10 @@ export default function PosiblesOfertas() {
 }
 
 function SubastaModal({ onClose, onGuardado }: { onClose: () => void; onGuardado: (id: number) => void }) {
-  const [plataforma, setPlataforma] = useState('Prosubastas')
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
-  const [lote, setLote] = useState('')
-  const [patioOrigen, setPatioOrigen] = useState('')
+  const [form, setForm, limpiarBorrador] = useBorrador('borrador:subasta-nueva', {
+    plataforma: 'Prosubastas', fecha: new Date().toISOString().slice(0, 10), lote: '', patioOrigen: '',
+  })
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -207,10 +208,11 @@ function SubastaModal({ onClose, onGuardado }: { onClose: () => void; onGuardado
     setGuardando(true)
     setError(null)
     const { data, error } = await supabase.from('subasta').insert({
-      plataforma, fecha, lote: lote || null, patio_origen: patioOrigen || null,
+      plataforma: form.plataforma, fecha: form.fecha, lote: form.lote || null, patio_origen: form.patioOrigen || null,
     }).select().single()
     setGuardando(false)
     if (error || !data) { setError(error?.message ?? 'No se pudo guardar.'); return }
+    limpiarBorrador()
     onGuardado(data.id)
   }
 
@@ -218,10 +220,10 @@ function SubastaModal({ onClose, onGuardado }: { onClose: () => void; onGuardado
     <Modal onClose={onClose}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Nueva subasta</h3>
-        <input required placeholder="Plataforma" value={plataforma} onChange={(e) => setPlataforma(e.target.value)} style={inputStyle} />
-        <input required type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} />
-        <input placeholder="Lote (opcional)" value={lote} onChange={(e) => setLote(e.target.value)} style={inputStyle} />
-        <input placeholder="Patio de origen (opcional)" value={patioOrigen} onChange={(e) => setPatioOrigen(e.target.value)} style={inputStyle} />
+        <input required placeholder="Plataforma" value={form.plataforma} onChange={(e) => set('plataforma', e.target.value)} style={inputStyle} />
+        <input required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} style={inputStyle} />
+        <input placeholder="Lote (opcional)" value={form.lote} onChange={(e) => set('lote', e.target.value)} style={inputStyle} />
+        <input placeholder="Patio de origen (opcional)" value={form.patioOrigen} onChange={(e) => set('patioOrigen', e.target.value)} style={inputStyle} />
         {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
         <FormBotones onClose={onClose} guardando={guardando} />
       </form>
@@ -235,22 +237,17 @@ function EvaluacionModal({ subastaId, roiSegmento, onClose, onGuardado }: {
   onClose: () => void
   onGuardado: () => void
 }) {
-  const [marca, setMarca] = useState('')
-  const [modelo, setModelo] = useState('')
-  const [anio, setAnio] = useState(String(new Date().getFullYear()))
-  const [version, setVersion] = useState('')
-  const [torre, setTorre] = useState('')
-  const [kilometrajeLlegada, setKilometrajeLlegada] = useState('')
-  const [danos, setDanos] = useState('')
-  const [costoReparacion, setCostoReparacion] = useState('')
-  const [precioMercado, setPrecioMercado] = useState('')
-  const [margenDeseado, setMargenDeseado] = useState('20')
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:evaluacion:${subastaId}`, {
+    marca: '', modelo: '', anio: String(new Date().getFullYear()), version: '', torre: '',
+    kilometrajeLlegada: '', danos: '', costoReparacion: '', precioMercado: '', margenDeseado: '20',
+  })
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const costoRep = Number(costoReparacion) || 0
-  const precioMkt = Number(precioMercado) || 0
-  const margen = (Number(margenDeseado) || 0) / 100
+  const costoRep = Number(form.costoReparacion) || 0
+  const precioMkt = Number(form.precioMercado) || 0
+  const margen = (Number(form.margenDeseado) || 0) / 100
   const utilidadObjetivo = margen * precioMkt
   const techoPuja = precioMkt - costoRep - COMISION_SUBASTA - utilidadObjetivo
   const costoTotalProyectado = techoPuja + costoRep + COMISION_SUBASTA
@@ -266,10 +263,10 @@ function EvaluacionModal({ subastaId, roiSegmento, onClose, onGuardado }: {
     setError(null)
     const { error } = await supabase.from('evaluacion_puja').insert({
       subasta_id: subastaId,
-      marca, modelo, anio: Number(anio), version: version || null,
-      torre: torre || null,
-      kilometraje_llegada: kilometrajeLlegada ? Number(kilometrajeLlegada) : null,
-      danos_observados: danos || null,
+      marca: form.marca, modelo: form.modelo, anio: Number(form.anio), version: form.version || null,
+      torre: form.torre || null,
+      kilometraje_llegada: form.kilometrajeLlegada ? Number(form.kilometrajeLlegada) : null,
+      danos_observados: form.danos || null,
       costo_reparacion_estimado: costoRep,
       precio_venta_esperado: precioMkt,
       margen_deseado: margen,
@@ -279,6 +276,7 @@ function EvaluacionModal({ subastaId, roiSegmento, onClose, onGuardado }: {
     })
     setGuardando(false)
     if (error) { setError(error.message); return }
+    limpiarBorrador()
     onGuardado()
   }
 
@@ -287,21 +285,21 @@ function EvaluacionModal({ subastaId, roiSegmento, onClose, onGuardado }: {
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
         <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Vehículo a evaluar</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: 8 }}>
-          <input required placeholder="Marca" value={marca} onChange={(e) => setMarca(e.target.value)} style={inputStyle} />
-          <input required placeholder="Modelo" value={modelo} onChange={(e) => setModelo(e.target.value)} style={inputStyle} />
-          <input required type="number" placeholder="Año" value={anio} onChange={(e) => setAnio(e.target.value)} style={inputStyle} />
+          <input required placeholder="Marca" value={form.marca} onChange={(e) => set('marca', e.target.value)} style={inputStyle} />
+          <input required placeholder="Modelo" value={form.modelo} onChange={(e) => set('modelo', e.target.value)} style={inputStyle} />
+          <input required type="number" placeholder="Año" value={form.anio} onChange={(e) => set('anio', e.target.value)} style={inputStyle} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <input placeholder="Versión" value={version} onChange={(e) => setVersion(e.target.value)} style={inputStyle} />
-          <input placeholder="Torre" value={torre} onChange={(e) => setTorre(e.target.value)} style={inputStyle} />
+          <input placeholder="Versión" value={form.version} onChange={(e) => set('version', e.target.value)} style={inputStyle} />
+          <input placeholder="Torre" value={form.torre} onChange={(e) => set('torre', e.target.value)} style={inputStyle} />
         </div>
-        <input type="number" placeholder="Kilometraje de llegada" value={kilometrajeLlegada} onChange={(e) => setKilometrajeLlegada(e.target.value)} style={inputStyle} />
-        <input placeholder="Daños observados" value={danos} onChange={(e) => setDanos(e.target.value)} style={inputStyle} />
-        <input required type="number" step="0.01" placeholder="Precio actual de mercado" value={precioMercado} onChange={(e) => setPrecioMercado(e.target.value)} style={inputStyle} />
-        <input required type="number" step="0.01" placeholder="Presupuesto de reparación" value={costoReparacion} onChange={(e) => setCostoReparacion(e.target.value)} style={inputStyle} />
+        <input type="number" placeholder="Kilometraje de llegada" value={form.kilometrajeLlegada} onChange={(e) => set('kilometrajeLlegada', e.target.value)} style={inputStyle} />
+        <input placeholder="Daños observados" value={form.danos} onChange={(e) => set('danos', e.target.value)} style={inputStyle} />
+        <input required type="number" step="0.01" placeholder="Precio actual de mercado" value={form.precioMercado} onChange={(e) => set('precioMercado', e.target.value)} style={inputStyle} />
+        <input required type="number" step="0.01" placeholder="Presupuesto de reparación" value={form.costoReparacion} onChange={(e) => set('costoReparacion', e.target.value)} style={inputStyle} />
         <label style={{ fontSize: 11.5, color: '#8b8578' }}>
           Margen deseado (%)
-          <input required type="number" step="0.1" value={margenDeseado} onChange={(e) => setMargenDeseado(e.target.value)} style={{ ...inputStyle, width: '100%', marginTop: 4 }} />
+          <input required type="number" step="0.1" value={form.margenDeseado} onChange={(e) => set('margenDeseado', e.target.value)} style={{ ...inputStyle, width: '100%', marginTop: 4 }} />
         </label>
 
         <div style={{ background: '#faf9f6', border: '1px solid #e4e0d8', padding: 10, fontSize: 12 }}>
@@ -324,10 +322,10 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
   onClose: () => void
   onAdquirido: (vehiculoId: number) => void
 }) {
-  const [idInterno, setIdInterno] = useState('')
-  const [precio, setPrecio] = useState('')
-  const [comision, setComision] = useState('5000')
-  const [fechaCompra, setFechaCompra] = useState(new Date().toISOString().slice(0, 10))
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:adquirir:${evaluacion.id}`, {
+    idInterno: '', precio: '', comision: '5000', fechaCompra: new Date().toISOString().slice(0, 10),
+  })
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -341,11 +339,11 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
     const ubicacionInicial = ubicaciones.find((u) => u.clave === 'traslado')
 
     const { data: vehiculo, error: errVehiculo } = await supabase.from('vehiculo').insert({
-      id_interno: idInterno,
+      id_interno: form.idInterno,
       marca: evaluacion.marca, modelo: evaluacion.modelo, anio: evaluacion.anio, version: evaluacion.version,
       kilometraje: evaluacion.kilometraje_llegada,
       estado_proceso_id: estadoInicial?.id, ubicacion_id: ubicacionInicial?.id,
-      fecha_compra: fechaCompra, precio_autorizado: evaluacion.precio_venta_esperado,
+      fecha_compra: form.fechaCompra, precio_autorizado: evaluacion.precio_venta_esperado,
     }).select().single()
 
     if (errVehiculo || !vehiculo) {
@@ -355,7 +353,7 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
     }
 
     const { error: errCompra } = await supabase.from('compra').insert({
-      vehiculo_id: vehiculo.id, precio: Number(precio), comision: Number(comision),
+      vehiculo_id: vehiculo.id, precio: Number(form.precio), comision: Number(form.comision),
     })
     if (errCompra) {
       setGuardando(false)
@@ -366,6 +364,7 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
     await supabase.from('evaluacion_puja').update({ resultado: 'ganada', vehiculo_id: vehiculo.id }).eq('id', evaluacion.id)
 
     setGuardando(false)
+    limpiarBorrador()
     onAdquirido(vehiculo.id)
   }
 
@@ -374,10 +373,10 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Adquirir {evaluacion.marca} {evaluacion.modelo} {evaluacion.anio}</h3>
         <p style={{ margin: 0, fontSize: 12, color: '#8b8578' }}>Esto crea la unidad en Inventario y sale de Posibles ofertas.</p>
-        <input required placeholder="Folio interno (ej. V-0001)" value={idInterno} onChange={(e) => setIdInterno(e.target.value)} style={inputStyle} />
-        <input required type="number" step="0.01" placeholder="Precio pagado" value={precio} onChange={(e) => setPrecio(e.target.value)} style={inputStyle} />
-        <input required type="number" step="0.01" placeholder="Comisión de subasta" value={comision} onChange={(e) => setComision(e.target.value)} style={inputStyle} />
-        <input required type="date" value={fechaCompra} onChange={(e) => setFechaCompra(e.target.value)} style={inputStyle} />
+        <input required placeholder="Folio interno (ej. V-0001)" value={form.idInterno} onChange={(e) => set('idInterno', e.target.value)} style={inputStyle} />
+        <input required type="number" step="0.01" placeholder="Precio pagado" value={form.precio} onChange={(e) => set('precio', e.target.value)} style={inputStyle} />
+        <input required type="number" step="0.01" placeholder="Comisión de subasta" value={form.comision} onChange={(e) => set('comision', e.target.value)} style={inputStyle} />
+        <input required type="date" value={form.fechaCompra} onChange={(e) => set('fechaCompra', e.target.value)} style={inputStyle} />
         {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
         <FormBotones onClose={onClose} guardando={guardando} textoGuardar="Adquirir" />
       </form>

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { useBorrador } from '../lib/useBorrador'
 import { mxn, porcentaje } from '../lib/helpers'
 import { inputStyle, th, td, btnPrimario, btnSecundario } from '../lib/ui'
 import { Modal, FormBotones } from '../components/Ui'
@@ -217,9 +218,10 @@ export default function Socios() {
 }
 
 function SocioModal({ socio, onClose, onGuardado }: { socio: Socio | null; onClose: () => void; onGuardado: () => void }) {
-  const [nombre, setNombre] = useState(socio?.nombre ?? '')
-  const [telefono, setTelefono] = useState(socio?.telefono ?? '')
-  const [correo, setCorreo] = useState(socio?.correo ?? '')
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:socio:${socio?.id ?? 'nuevo'}`, {
+    nombre: socio?.nombre ?? '', telefono: socio?.telefono ?? '', correo: socio?.correo ?? '',
+  })
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -228,12 +230,13 @@ function SocioModal({ socio, onClose, onGuardado }: { socio: Socio | null; onClo
     if (!supabase) return
     setGuardando(true)
     setError(null)
-    const datos = { nombre, telefono: telefono || null, correo: correo || null }
+    const datos = { nombre: form.nombre, telefono: form.telefono || null, correo: form.correo || null }
     const { error } = socio
       ? await supabase.from('socio').update(datos).eq('id', socio.id)
       : await supabase.from('socio').insert(datos)
     setGuardando(false)
     if (error) { setError(error.message); return }
+    limpiarBorrador()
     onGuardado()
   }
 
@@ -241,9 +244,9 @@ function SocioModal({ socio, onClose, onGuardado }: { socio: Socio | null; onClo
     <Modal onClose={onClose}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>{socio ? 'Editar socio' : 'Nuevo socio'}</h3>
-        <input required placeholder="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} style={inputStyle} />
-        <input placeholder="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} style={inputStyle} />
-        <input placeholder="Correo" value={correo} onChange={(e) => setCorreo(e.target.value)} style={inputStyle} />
+        <input required placeholder="Nombre" value={form.nombre} onChange={(e) => set('nombre', e.target.value)} style={inputStyle} />
+        <input placeholder="Teléfono" value={form.telefono} onChange={(e) => set('telefono', e.target.value)} style={inputStyle} />
+        <input placeholder="Correo" value={form.correo} onChange={(e) => set('correo', e.target.value)} style={inputStyle} />
         {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
         <FormBotones onClose={onClose} guardando={guardando} />
       </form>
@@ -258,10 +261,13 @@ function AportacionModal({ aportacion, socios, vehiculos, onClose, onGuardado }:
   onClose: () => void
   onGuardado: () => void
 }) {
-  const [socioId, setSocioId] = useState(aportacion ? String(aportacion.socio_id) : '')
-  const [vehiculoId, setVehiculoId] = useState(aportacion ? String(aportacion.vehiculo_id) : '')
-  const [monto, setMonto] = useState(aportacion ? String(aportacion.monto) : '')
-  const [fecha, setFecha] = useState(aportacion?.fecha ?? new Date().toISOString().slice(0, 10))
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:aportacion:${aportacion?.id ?? 'nueva'}`, {
+    socioId: aportacion ? String(aportacion.socio_id) : '',
+    vehiculoId: aportacion ? String(aportacion.vehiculo_id) : '',
+    monto: aportacion ? String(aportacion.monto) : '',
+    fecha: aportacion?.fecha ?? new Date().toISOString().slice(0, 10),
+  })
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -270,12 +276,13 @@ function AportacionModal({ aportacion, socios, vehiculos, onClose, onGuardado }:
     if (!supabase) return
     setGuardando(true)
     setError(null)
-    const datos = { socio_id: Number(socioId), vehiculo_id: Number(vehiculoId), monto: Number(monto), fecha }
+    const datos = { socio_id: Number(form.socioId), vehiculo_id: Number(form.vehiculoId), monto: Number(form.monto), fecha: form.fecha }
     const { error } = aportacion
       ? await supabase.from('aportacion').update(datos).eq('id', aportacion.id)
       : await supabase.from('aportacion').insert(datos)
     setGuardando(false)
     if (error) { setError(error.message); return }
+    limpiarBorrador()
     onGuardado()
   }
 
@@ -283,16 +290,16 @@ function AportacionModal({ aportacion, socios, vehiculos, onClose, onGuardado }:
     <Modal onClose={onClose}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>{aportacion ? 'Editar aportación' : 'Registrar aportación'}</h3>
-        <select required value={socioId} onChange={(e) => setSocioId(e.target.value)} style={inputStyle}>
+        <select required value={form.socioId} onChange={(e) => set('socioId', e.target.value)} style={inputStyle}>
           <option value="">Socio…</option>
           {socios.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
-        <select required value={vehiculoId} onChange={(e) => setVehiculoId(e.target.value)} style={inputStyle}>
+        <select required value={form.vehiculoId} onChange={(e) => set('vehiculoId', e.target.value)} style={inputStyle}>
           <option value="">Unidad…</option>
           {vehiculos.map((v) => <option key={v.id} value={v.id}>{v.id_interno} · {v.marca} {v.modelo} {v.anio}</option>)}
         </select>
-        <input required type="number" step="0.01" placeholder="Monto" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} />
-        <input required type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} />
+        <input required type="number" step="0.01" placeholder="Monto" value={form.monto} onChange={(e) => set('monto', e.target.value)} style={inputStyle} />
+        <input required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} style={inputStyle} />
         {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
         <FormBotones onClose={onClose} guardando={guardando} />
       </form>

@@ -202,15 +202,39 @@ El flujo que el dueño describió y que ya está construido de punta a punta:
    umbral `listo` de `estado_proceso.orden` (mismo criterio que "En
    venta") y no están vendidas — antes de eso no tiene sentido que el
    comisionista la vea.
-4. **Venta / Vendidos** (etapa final): `Ventas.tsx` registra la venta
-   (precio acordado, cliente, comisionista + monto de comisión opcional
-   ya en el mismo formulario) y cierra el financiero (`cerrarFinanciero`:
-   calcula utilidad/margen/ROI reales contra `v_costo_vehiculo`, genera
+4. **Venta / Vendidos** (etapa final): **"Registrar venta" vive en "En
+   venta" (`EnVenta.tsx`)**, no en `Ventas.tsx` — cada fila de unidad lista
+   para vender tiene su botón, y `VentaModal` (exportado desde
+   `Ventas.tsx` para que ambas pantallas lo reutilicen) crea el `venta` +
+   `comision` (si aplica, con monto opcional ya en el mismo formulario).
+   `Ventas.tsx` en cambio **solo muestra unidades que YA tienen una venta
+   en curso** (cambiando su estado hacia vendido) — no las que están
+   simplemente publicadas sin comprador; ahí vive `cerrarFinanciero`
+   (calcula utilidad/margen/ROI reales contra `v_costo_vehiculo`, genera
    `liquidacion` por socio, marca `estado_comercial = 'vendido'`). En
    cuanto se marca vendida, la unidad sale de Inventario/En venta y
    aparece solo en **`src/screens/Vendidos.tsx`** — sección propia y
    separada de Inventario, con fecha de venta, canal, precio final,
    comisionista/comisión, y (admin) utilidad/margen/ROI del cierre.
+   **Editable, no solo lectura** (RN de simetría agregar/editar): fecha,
+   canal y precio de la venta (admin/gerencia, mismo permiso que
+   `venta_update`) y monto/fecha de pago de la comisión (admin, mismo
+   permiso que `comision_admin`) se corrigen ahí mismo con inputs
+   `onBlur`, igual que en "En venta". Si el cierre financiero ya está
+   cerrado y hace falta corregir el precio, el botón **"Recalcular
+   cierre"** (admin) usa la tabla `reapertura` — ya existía en el esquema
+   desde la migración 005 pero nunca se había usado desde el frontend —
+   para dejar constancia del motivo, borra el `cierre_financiero`
+   anterior (cascada a `liquidacion`) y genera uno nuevo (`estado:
+   'reabierto'`) con los números recalculados contra el precio/canal ya
+   corregidos.
+
+**Bug preexistente encontrado y corregido de paso:** `cierre_financiero.cerrado_por`
+es `not null references perfil(id)` sin default, pero `cerrarFinanciero()`
+en `Ventas.tsx` nunca lo mandaba — cualquier intento de "Cerrar financiero"
+debía estar fallando con violación de NOT NULL desde que se construyó esa
+pantalla. Se corrigió mandando `session.user.id` (mismo patrón que ya se
+necesitaba para el nuevo flujo de recalcular cierre).
 
 **`Calculadora.tsx` quedó desactivada** (sin ruta ni nav, el archivo sigue
 en `src/screens/`): `PosiblesOfertas.tsx` la reemplaza con el mismo
@@ -218,6 +242,29 @@ cálculo pero vinculado de verdad a una subasta real y a la compra que
 genera — la calculadora vieja dejaba evaluaciones huérfanas (sin
 `subasta_id`) y permitía marcar `resultado = 'ganada'` a mano sin crear
 nunca el vehículo real.
+
+## Orden del nav y borradores de formulario
+
+- **Orden del nav** (`Layout.tsx`): Panel → Posibles ofertas (admin,
+  primer paso del ciclo) → Inventario → En proceso/En venta/Ventas/Vendidos
+  (admin/gerencia) → Socios/Usuarios (admin). Posibles ofertas va justo
+  debajo de Panel a propósito, no junto a Socios/Usuarios — es la entrada
+  al ciclo, no una pantalla administrativa secundaria.
+- **Borradores de formulario en localStorage** (`src/lib/useBorrador.ts`):
+  hook `useBorrador<T>(clave, inicial)` — misma forma que `useState` más
+  una función `limpiar()` — que persiste el estado de un formulario en
+  `localStorage` mientras se llena, para que no se pierda si el navegador
+  descarta la pestaña en segundo plano (o el usuario tarda) antes de
+  guardar. Aplicado a los formularios de captura más largos/críticos: alta
+  de vehículo, captura de gasto, capital por socio, publicación para
+  comisionistas, registrar venta, y todo el flujo de Posibles ofertas
+  (subasta/evaluación/adquirir), Socios (socio/aportación) y referidos del
+  portal de comisionista. La clave incluye el id del registro relacionado
+  (vehículo, subasta, aportación, etc.) para que dos formularios distintos
+  no compartan el mismo borrador. Se limpia SOLO al guardar con éxito —
+  cancelar o cerrar el modal por accidente no borra el borrador, a
+  propósito, porque perderlo ahí es exactamente el problema que se quiere
+  evitar.
 
 ## Qué falta (no asumir que ya existe)
 
