@@ -15,6 +15,7 @@ import Consignacion from './screens/Consignacion'
 import Comisionista from './screens/Comisionista'
 import Ventas from './screens/Ventas'
 import Calculadora from './screens/Calculadora'
+import MiCuenta from './screens/MiCuenta'
 
 function Protegido({ children }: { children: React.ReactNode }) {
   const { session, cargando } = useAuth()
@@ -24,7 +25,14 @@ function Protegido({ children }: { children: React.ReactNode }) {
 }
 
 function Rutas() {
-  const { session } = useAuth()
+  const { session, passwordRecovery } = useAuth()
+
+  // Un enlace de "olvidé mi contraseña" deja una sesión válida y un
+  // fragmento #access_token=...&type=recovery en la URL. Con HashRouter ese
+  // fragmento no coincide con ninguna ruta definida, así que se revisa
+  // passwordRecovery ANTES de intentar hacer match de rutas — si no, la
+  // pantalla de "pon tu nueva contraseña" nunca llegaría a montarse.
+  if (passwordRecovery) return <Login />
 
   return (
     <Routes>
@@ -50,6 +58,7 @@ function Rutas() {
         <Route path="calculadora" element={<Calculadora />} />
         <Route path="comisionista" element={<Comisionista />} />
         <Route path="usuarios" element={<Usuarios />} />
+        <Route path="mi-cuenta" element={<MiCuenta />} />
       </Route>
     </Routes>
   )

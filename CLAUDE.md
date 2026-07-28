@@ -105,6 +105,26 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
    adicional en `cliente` para que un comisionista vea (solo lectura) los
    clientes que él mismo refirió vía `prospecto` — sin esto el portal de
    comisionista no podía mostrar nombre/teléfono del referido.
+8. `008_login_picker_correo_perfil.sql` — columna `correo` en `perfil`
+   (backfill desde `auth.users`, mantenida por `handle_new_user()`) y
+   función `listar_perfiles_publicos()` (`security definer`, `grant` a
+   `anon`) para el selector de perfiles del login — mismo patrón
+   (vista → función SECURITY DEFINER) que `robsen-salon` adoptó tras su
+   propia auditoría de seguridad; ver comentarios en el archivo.
+
+**Datos reales cargados (es_demo=false):** 19 unidades del negocio real
+(V-1001 a V-1019) con su `compra`/`gasto` desglosado, tomadas de
+`Informacion_cuentas.xlsx` que subió el usuario. **Esto se aplicó
+directo a la base vía MCP, NUNCA como archivo de migración** — a
+diferencia de los catálogos y semillas de demo, estas son cifras reales
+del negocio y este repo es público. Si hace falta re-derivar o ajustar
+estos datos, pídele el Excel al usuario de nuevo; no lo busques en el
+repo ni lo commitees ahí. Nota: varias unidades donde el Excel mostraba
+"Utilidad" ya calculada tenían errores de aritmética del propio Excel
+(ej. March 2022 arrastraba un error de captura); se importó el desglose
+de compra/gastos tal cual pero el cierre financiero (venta + utilidad
+real) se dejó pendiente para que el admin lo cierre desde la pantalla
+Ventas, que sí calcula bien contra `v_costo_vehiculo`.
 
 **Ya verificado al peso dos veces** (MySQL y ahora Postgres): Mirage 2022
 reproduce `costo_total = 142,580.00` vía `v_costo_vehiculo` en ambos
@@ -114,16 +134,36 @@ todos sus proyectos con Supabase.
 
 ## Qué falta (no asumir que ya existe)
 
-- Pantallas construidas (`src/screens/`): Login/registro, Panel,
-  Inventario (catálogo/búsqueda), Expediente del vehículo (estado
-  comercial/documental, checklist de documentación), alta de vehículo,
-  captura de gasto, administración de usuarios, En proceso, En venta,
-  Socios y liquidación, Taller (kanban de órdenes de trabajo),
-  Consignación (lotes), Portal de comisionista (Catálogo / Mis referidos /
-  Mis comisiones), Ventas y cierre financiero (registrar venta → cerrar
-  financiero → genera `liquidacion` por socio vía `v_participacion_socio`),
-  Calculadora de puja (techo de puja + ROI proyectado contra
-  `v_roi_segmento`).
+- Pantallas construidas (`src/screens/`): Login (selector de perfiles +
+  registro + recuperar/restablecer contraseña), Mi cuenta (cambiar
+  contraseña estando ya adentro), Panel, Inventario (catálogo/búsqueda),
+  Expediente del vehículo (estado comercial/documental, checklist de
+  documentación), alta de vehículo, captura de gasto, administración de
+  usuarios, En proceso, En venta, Socios y liquidación, Taller (kanban de
+  órdenes de trabajo), Consignación (lotes), Portal de comisionista
+  (Catálogo / Mis referidos / Mis comisiones), Ventas y cierre financiero
+  (registrar venta → cerrar financiero → genera `liquidacion` por socio
+  vía `v_participacion_socio`), Calculadora de puja (techo de puja + ROI
+  proyectado contra `v_roi_segmento`).
+- **Login con selector de perfiles** (mismo patrón que `robsen-salon`):
+  `Login.tsx` llama `supabase.rpc('listar_perfiles_publicos')` (anon, sin
+  sesión) para mostrar tarjetas de las cuentas activas; al elegir una se
+  pide solo la contraseña. `useAuth()` ahora expone `enviarRecuperacion`
+  (`resetPasswordForEmail`) y `actualizarPassword` (`updateUser`), y un
+  estado `passwordRecovery` que se activa con el evento
+  `PASSWORD_RECOVERY` de Supabase. **Cuidado con `HashRouter`:** el enlace
+  de recuperación deja un fragmento `#access_token=...&type=recovery` en
+  la URL que no coincide con ninguna ruta — por eso `App.tsx` revisa
+  `passwordRecovery` ANTES de intentar hacer match de rutas (`if
+  (passwordRecovery) return <Login />`), si no la pantalla de "pon tu
+  nueva contraseña" nunca llegaría a montarse.
+- **No se pudo probar el flujo de login end-to-end en navegador en esta
+  sesión** (Chromium en el sandbox no logra tunelizar HTTPS a través del
+  proxy del agente — error conocido, documentado en `docs/DEPLOY.md`).
+  Se verificó por separado: la función `listar_perfiles_publicos()`
+  responde correctamente por `curl` directo, y la UI de cada paso
+  (selector, registro) se revisó visualmente con Playwright sin red. Antes
+  de dar el login por bueno del todo, probarlo en un navegador real.
 - **`estado_proceso` y `ubicación` NO se piden en el alta** (`VehiculoNuevo`):
   una unidad se registra una sola vez, pero su etapa y ubicación cambian
   todo el tiempo mientras se prepara y se vende — pedirlas en el alta las

@@ -64,10 +64,12 @@ export default function Layout() {
         </nav>
 
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', paddingTop: 12, marginTop: 12 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 500 }}>{perfil?.nombre}</div>
-          <div style={{ fontSize: 11, color: 'rgba(243,241,236,0.55)', marginBottom: 8 }}>
-            {perfil ? ROL_LABEL[perfil.rol] : ''}
-          </div>
+          <NavLink to="/mi-cuenta" style={{ display: 'block', textDecoration: 'none' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#f3f1ec' }}>{perfil?.nombre}</div>
+            <div style={{ fontSize: 11, color: 'rgba(243,241,236,0.55)', marginBottom: 8 }}>
+              {perfil ? ROL_LABEL[perfil.rol] : ''} · Mi cuenta
+            </div>
+          </NavLink>
           <button
             onClick={() => signOut()}
             style={{ background: 'none', border: '1px solid rgba(255,255,255,0.2)', color: '#f3f1ec', fontSize: 11.5, padding: '5px 9px', cursor: 'pointer' }}

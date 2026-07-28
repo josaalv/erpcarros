@@ -7,6 +7,15 @@ export interface Perfil {
   activo: boolean
 }
 
+/** Fila de listar_perfiles_publicos() (RPC anon, sin RLS de perfil): solo
+ * las columnas necesarias para el selector de perfiles del login. */
+export interface PerfilPublico {
+  id: string
+  nombre: string
+  rol: Rol
+  correo: string
+}
+
 export interface EstadoProceso {
   id: number
   clave: string
