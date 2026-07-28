@@ -59,6 +59,18 @@ esencial de esas reglas en las secciones de abajo.
   hay que desactivar "Confirm email" en Supabase Dashboard →
   Authentication → Sign In / Providers → Email — **no hay forma de
   cambiar ese ajuste vía SQL/MCP**, es config de la plataforma.
+- **Site URL / Redirect URLs — mismo problema, otro rincón** (julio 2026):
+  el enlace de "olvidé mi contraseña" mandaba a `localhost:3000` aunque
+  `enviarRecuperacion()` en `auth.tsx` ya pasa `redirectTo:
+  window.location.origin + window.location.pathname` correctamente.
+  Causa: Supabase ignora el `redirectTo` si esa URL no está en la lista
+  de "Redirect URLs" del dashboard y cae de vuelta al "Site URL" —
+  ninguno de los dos se puede tocar por SQL/MCP, son config de plataforma
+  (Authentication → URL Configuration). Arreglo de una sola vez: poner
+  Site URL = `https://josaalv.github.io/erpcarros/` y agregar
+  `https://josaalv.github.io/erpcarros/**` a Redirect URLs. Si un enlace
+  de correo (confirmación, recuperación, invitación) manda a localhost,
+  revisar esto primero antes de tocar código.
 
 ## Base de datos — decisiones que sí se preservaron del diseño original
 
