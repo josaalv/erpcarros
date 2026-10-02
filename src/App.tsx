@@ -22,9 +22,23 @@ import MiCuenta from './screens/MiCuenta'
 import PosiblesOfertas from './screens/PosiblesOfertas'
 
 function Protegido({ children }: { children: React.ReactNode }) {
-  const { session, cargando } = useAuth()
-  if (cargando) return <div style={{ padding: 40 }}>Cargando…</div>
+  const { session, perfil, cargando, signOut } = useAuth()
+  if (cargando) return <div className="cargando">Cargando…</div>
   if (!session) return <Navigate to="/login" replace />
+  if (!perfil || !perfil.activo) {
+    return (
+      <div className="login-pagina">
+        <div className="login-tarjeta">
+          <h1 style={{ fontSize: 22, marginBottom: 10 }}>Cuenta sin acceso</h1>
+          <p className="texto-suave">
+            {perfil ? 'Tu cuenta está desactivada.' : 'Tu cuenta no tiene un perfil asignado.'} Pídele a un
+            administrador que la active.
+          </p>
+          <button className="btn btn-secundario" onClick={() => signOut()}>Cerrar sesión</button>
+        </div>
+      </div>
+    )
+  }
   return <>{children}</>
 }
 

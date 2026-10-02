@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 import { ROL_LABEL } from '../lib/helpers'
+import { PageHeader, Alerta, Cargando, Badge } from '../components/Ui'
 import type { Perfil, Rol } from '../types'
 
 const ROLES: Rol[] = ['admin', 'gerencia', 'comisionista', 'demo']
 
-/**
- * Solo admin (RLS: perfil_update_admin). Todo el que se registra entra
- * como 'gerencia' por default salvo el primero (que es 'admin') — aquí
- * es donde el admin reclasifica al resto del equipo.
- */
+/** Solo admin. Quien se registra entra como Gerencia; aquí se ajusta el rol. */
 export default function Usuarios() {
-  const [usuarios, setUsuarios] = useState<Perfil[]>([])
+  const { perfil: yo } = useAuth()
+  const [usuarios, setUsuarios] = useState<(Perfil & { correo?: string })[]>([])
   const [cargando, setCargando] = useState(true)
   const [guardandoId, setGuardandoId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   async function recargar() {
     if (!supabase) return
@@ -24,59 +24,53 @@ export default function Usuarios() {
 
   useEffect(() => { recargar() }, [])
 
-  async function cambiarRol(id: string, rol: Rol) {
+  async function actualizar(id: string, cambios: Partial<Perfil>) {
     if (!supabase) return
     setGuardandoId(id)
-    await supabase.from('perfil').update({ rol }).eq('id', id)
+    setError(null)
+    const { error } = await supabase.from('perfil').update(cambios).eq('id', id)
+    if (error) setError(error.message)
     await recargar()
     setGuardandoId(null)
   }
 
-  async function cambiarActivo(id: string, activo: boolean) {
-    if (!supabase) return
-    setGuardandoId(id)
-    await supabase.from('perfil').update({ activo }).eq('id', id)
-    await recargar()
-    setGuardandoId(null)
-  }
-
-  if (cargando) return <p>Cargando…</p>
+  if (cargando) return <Cargando />
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h1 style={{ font: '400 26px Georgia, serif', margin: '0 0 16px' }}>Usuarios</h1>
+    <div className="contenido angosto" style={{ marginLeft: 0 }}>
+      <PageHeader titulo="Usuarios" descripcion="Cambia el rol de cada persona o desactiva su acceso. Tu propia cuenta no se puede modificar aquí para que no te quedes fuera." />
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
-        <thead>
-          <tr style={{ background: '#faf9f6', textAlign: 'left' }}>
-            {['Nombre', 'Rol', 'Activo'].map((h) => (
-              <th key={h} style={{ padding: '9px 10px', borderBottom: '1px solid #e4e0d8', fontSize: 9.5, textTransform: 'uppercase', color: '#6b665c' }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {usuarios.map((u) => (
-            <tr key={u.id} style={{ borderTop: '1px solid #f0ede6', opacity: guardandoId === u.id ? 0.5 : 1 }}>
-              <td style={{ padding: '9px 10px' }}>{u.nombre}</td>
-              <td style={{ padding: '9px 10px' }}>
-                <select
-                  value={u.rol}
-                  onChange={(e) => cambiarRol(u.id, e.target.value as Rol)}
-                  style={{ padding: '5px 7px', border: '1px solid #ddd8d0', fontSize: 12, fontFamily: 'inherit' }}
-                >
-                  {ROLES.map((r) => <option key={r} value={r}>{ROL_LABEL[r]}</option>)}
-                </select>
-              </td>
-              <td style={{ padding: '9px 10px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                  <input type="checkbox" checked={u.activo} onChange={(e) => cambiarActivo(u.id, e.target.checked)} />
-                  {u.activo ? 'Activo' : 'Desactivado'}
-                </label>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {error && <div style={{ marginBottom: 16 }}><Alerta>{error}</Alerta></div>}
+
+      <div className="tabla-wrap">
+        <table className="tabla">
+          <thead><tr><th>Nombre</th><th>Rol</th><th>Acceso</th></tr></thead>
+          <tbody>
+            {usuarios.map((u) => {
+              const soyYo = u.id === yo?.id
+              return (
+                <tr key={u.id} className={guardandoId === u.id ? 'ocupado' : u.activo ? '' : 'inactivo'}>
+                  <td>
+                    <span style={{ fontWeight: 600 }}>{u.nombre}</span> {soyYo && <Badge tono="primario">Tú</Badge>}
+                    {u.correo && <span className="unidad-folio">{u.correo}</span>}
+                  </td>
+                  <td>
+                    <select className="select select-chico" value={u.rol} disabled={soyYo} onChange={(e) => actualizar(u.id, { rol: e.target.value as Rol })}>
+                      {ROLES.map((r) => <option key={r} value={r}>{ROL_LABEL[r]}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <label className="check">
+                      <input type="checkbox" checked={u.activo} disabled={soyYo} onChange={(e) => actualizar(u.id, { activo: e.target.checked })} />
+                      {u.activo ? 'Activo' : 'Desactivado'}
+                    </label>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

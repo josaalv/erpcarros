@@ -1,96 +1,108 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { ROL_LABEL } from '../lib/helpers'
+import type { Rol } from '../types'
 
-const NAV = [{ to: '/', label: 'Panel' }]
+interface ItemNav { to: string; label: string; roles?: Rol[] }
+interface GrupoNav { titulo?: string; items: ItemNav[] }
 
-// Posibles ofertas va justo debajo de Panel: es el primer paso del ciclo
-// (etapa 1, pre-compra) y admin-only — antes de Inventario, que es la
-// etapa 2 en adelante.
-const NAV_POSIBLES_OFERTAS = [{ to: '/posibles-ofertas', label: 'Posibles ofertas' }]
+const ADMIN: Rol[] = ['admin']
+const ADMIN_GERENCIA: Rol[] = ['admin', 'gerencia']
 
-const NAV_INVENTARIO = [{ to: '/inventario', label: 'Inventario' }]
-
-// Taller y Consignación desactivadas a propósito: todavía no se define qué
-// hacen esas pantallas a futuro. El código sigue en src/screens/ sin tocar
-// (Taller.tsx, Consignacion.tsx) — reactivar es solo devolver estas dos
-// líneas y sus rutas en App.tsx.
-const NAV_ADMIN_GERENCIA = [
-  { to: '/en-proceso', label: 'En proceso' },
-  { to: '/en-venta', label: 'En venta' },
-  { to: '/ventas', label: 'Ventas' },
-  { to: '/vendidos', label: 'Vendidos' },
+// Taller y Consignación están desactivadas a propósito (ver CLAUDE.md); los
+// archivos siguen en src/screens/. Posibles ofertas va justo debajo de Panel
+// porque es la entrada al ciclo.
+const GRUPOS: GrupoNav[] = [
+  { items: [{ to: '/', label: 'Panel' }] },
+  {
+    titulo: 'Ciclo del vehículo',
+    items: [
+      { to: '/posibles-ofertas', label: 'Posibles ofertas', roles: ADMIN },
+      { to: '/inventario', label: 'Inventario' },
+      { to: '/en-proceso', label: 'En proceso', roles: ADMIN_GERENCIA },
+      { to: '/en-venta', label: 'En venta', roles: ADMIN_GERENCIA },
+      { to: '/ventas', label: 'Ventas', roles: ADMIN_GERENCIA },
+      { to: '/vendidos', label: 'Vendidos', roles: ADMIN_GERENCIA },
+    ],
+  },
+  {
+    titulo: 'Administración',
+    items: [
+      { to: '/socios', label: 'Socios', roles: ADMIN },
+      { to: '/usuarios', label: 'Usuarios', roles: ADMIN },
+    ],
+  },
+  { items: [{ to: '/comisionista', label: 'Mi portal', roles: ['comisionista'] }] },
 ]
-
-// Calculadora desactivada: Posibles ofertas la reemplaza (mismo cálculo de
-// techo de puja, pero vinculado a una subasta real y a la compra que crea).
-const NAV_ADMIN = [
-  { to: '/socios', label: 'Socios' },
-  { to: '/usuarios', label: 'Usuarios' },
-]
-
-const NAV_COMISIONISTA = [{ to: '/comisionista', label: 'Mi portal' }]
 
 export default function Layout() {
   const { perfil, signOut } = useAuth()
-  const nav = [
-    ...NAV,
-    ...(perfil?.rol === 'admin' ? NAV_POSIBLES_OFERTAS : []),
-    ...NAV_INVENTARIO,
-    ...(perfil?.rol === 'admin' || perfil?.rol === 'gerencia' ? NAV_ADMIN_GERENCIA : []),
-    ...(perfil?.rol === 'admin' ? NAV_ADMIN : []),
-    ...(perfil?.rol === 'comisionista' ? NAV_COMISIONISTA : []),
-  ]
+  const location = useLocation()
+  const [menuAbierto, setMenuAbierto] = useState(false)
+  const [rutaMenu, setRutaMenu] = useState(location.pathname)
+
+  if (rutaMenu !== location.pathname) {
+    setRutaMenu(location.pathname)
+    setMenuAbierto(false)
+  }
+
+  const rol = perfil?.rol
+  const grupos = GRUPOS
+    .map((g) => ({ ...g, items: g.items.filter((i) => !i.roles || (rol && i.roles.includes(rol))) }))
+    .filter((g) => g.items.length > 0)
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: '"IBM Plex Sans", system-ui, sans-serif' }}>
-      <aside style={{ width: 220, background: '#1c231f', color: '#f3f1ec', padding: '18px 14px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ font: '600 10px/1 "IBM Plex Mono", monospace', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'oklch(0.7 0.1 190)', marginBottom: 20 }}>
-          ERP Vehículos
+    <div className="app">
+      <header className="topbar">
+        <strong>ERP Vehículos</strong>
+        <button onClick={() => setMenuAbierto(true)}>Menú</button>
+      </header>
+
+      <aside className={`sidebar${menuAbierto ? ' abierto' : ''}`}>
+        <div className="sidebar-marca" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>EV</span> ERP Vehículos
+          </div>
+          {menuAbierto && (
+            <button className="btn btn-chico" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }} onClick={() => setMenuAbierto(false)}>
+              Cerrar
+            </button>
+          )}
         </div>
 
-        {perfil?.rol === 'demo' && (
-          <div style={{ background: 'oklch(0.55 0.13 85)', color: '#2a2410', fontSize: 10.5, fontWeight: 600, padding: '5px 8px', marginBottom: 14, textAlign: 'center' }}>
-            MODO DEMOSTRACIÓN
-          </div>
-        )}
+        {rol === 'demo' && <div className="demo-banner">MODO DEMOSTRACIÓN</div>}
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-          {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              style={({ isActive }) => ({
-                padding: '8px 10px', fontSize: 12.5, textDecoration: 'none',
-                color: isActive ? '#f3f1ec' : 'rgba(243,241,236,0.62)',
-                background: isActive ? 'rgba(255,255,255,0.09)' : 'transparent',
-                fontWeight: isActive ? 500 : 400,
-              })}
-            >
-              {item.label}
-            </NavLink>
+        <nav className="nav">
+          {grupos.map((g, i) => (
+            <div key={g.titulo ?? i}>
+              {g.titulo && <div className="nav-grupo">{g.titulo}</div>}
+              {g.items.map((item) => (
+                <NavLink key={item.to} to={item.to} end={item.to === '/'}>
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', paddingTop: 12, marginTop: 12 }}>
-          <NavLink to="/mi-cuenta" style={{ display: 'block', textDecoration: 'none' }}>
-            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#f3f1ec' }}>{perfil?.nombre}</div>
-            <div style={{ fontSize: 11, color: 'rgba(243,241,236,0.55)', marginBottom: 8 }}>
-              {perfil ? ROL_LABEL[perfil.rol] : ''} · Mi cuenta
-            </div>
-          </NavLink>
+        <div className="sidebar-usuario">
+          <NavLink to="/mi-cuenta">{perfil?.nombre}</NavLink>
+          <small>{perfil ? ROL_LABEL[perfil.rol] : ''} · Mi cuenta</small>
           <button
+            className="btn btn-chico"
+            style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
             onClick={() => signOut()}
-            style={{ background: 'none', border: '1px solid rgba(255,255,255,0.2)', color: '#f3f1ec', fontSize: 11.5, padding: '5px 9px', cursor: 'pointer' }}
           >
             Cerrar sesión
           </button>
         </div>
       </aside>
 
-      <main style={{ flex: 1, background: '#faf9f6', padding: '24px 32px', overflowY: 'auto' }}>
-        <Outlet />
+      <main className="main">
+        <div className="contenido">
+          <Outlet />
+        </div>
       </main>
     </div>
   )

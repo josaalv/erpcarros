@@ -204,12 +204,13 @@ El flujo que el dueño describió y que ya está construido de punta a punta:
    comisionista la vea.
 4. **Venta / Vendidos** (etapa final): **"Registrar venta" vive en "En
    venta" (`EnVenta.tsx`)**, no en `Ventas.tsx` — cada fila de unidad lista
-   para vender tiene su botón, y `VentaModal` (exportado desde
-   `Ventas.tsx` para que ambas pantallas lo reutilicen) crea el `venta` +
+   para vender tiene su botón, y `VentaModal` (`src/components/VentaModal.tsx`)
+   crea el `venta` +
    `comision` (si aplica, con monto opcional ya en el mismo formulario).
-   `Ventas.tsx` en cambio **solo muestra unidades que YA tienen una venta
-   en curso** (cambiando su estado hacia vendido) — no las que están
-   simplemente publicadas sin comprador; ahí vive `cerrarFinanciero`
+   `Ventas.tsx` ("Ventas por cerrar") **solo muestra ventas con `estado =
+   'en_proceso'`** — ahí vive "Cancelar venta" (admin: borra la `comision`
+   y marca la venta `cancelada`, la unidad vuelve a estar disponible en En
+   venta; `venta` no tiene policy de DELETE) y `cerrarFinanciero`
    (calcula utilidad/margen/ROI reales contra `v_costo_vehiculo`, genera
    `liquidacion` por socio, marca `estado_comercial = 'vendido'`). En
    cuanto se marca vendida, la unidad sale de Inventario/En venta y
@@ -224,10 +225,15 @@ El flujo que el dueño describió y que ya está construido de punta a punta:
    cerrado y hace falta corregir el precio, el botón **"Recalcular
    cierre"** (admin) usa la tabla `reapertura` — ya existía en el esquema
    desde la migración 005 pero nunca se había usado desde el frontend —
-   para dejar constancia del motivo, borra el `cierre_financiero`
-   anterior (cascada a `liquidacion`) y genera uno nuevo (`estado:
-   'reabierto'`) con los números recalculados contra el precio/canal ya
-   corregidos.
+   para dejar constancia del motivo y luego **actualiza el mismo
+   `cierre_financiero` en su lugar** (`estado: 'reabierto'`, borra y
+   regenera sus `liquidacion`). No borrarlo: el FK
+   `reapertura.cierre_id` es `ON DELETE CASCADE` (migración 011), así que
+   borrar el cierre borraba también el motivo recién guardado — así
+   estaba antes de octubre 2026 y la constancia nunca quedaba.
+   **`estado_comercial = 'vendido'` solo lo pone el cierre financiero**:
+   ni el Expediente ni En venta ofrecen "Vendido" como opción manual
+   (antes sí, y la unidad saltaba a Vendidos sin venta ni cierre).
 
 **Bug preexistente encontrado y corregido de paso:** `cierre_financiero.cerrado_por`
 es `not null references perfil(id)` sin default, pero `cerrarFinanciero()`
@@ -242,6 +248,43 @@ cálculo pero vinculado de verdad a una subasta real y a la compra que
 genera — la calculadora vieja dejaba evaluaciones huérfanas (sin
 `subasta_id`) y permitía marcar `resultado = 'ganada'` a mano sin crear
 nunca el vehículo real.
+
+## Diseño de la interfaz (octubre 2026)
+
+- **Sistema de diseño en `src/index.css`** (tokens en `:root`, clases
+  `.card`, `.tabla`, `.btn-*`, `.input`/`.select`, `.badge-*`, `.tabs`,
+  `.modal`, `.kpis`) + componentes en `src/components/Ui.tsx`
+  (`PageHeader`, `Seccion`, `Campo`, `Modal` con `titulo`, `Alerta`,
+  `Kpi`, `Dato`, `EtiquetaBadge`, `NombreUnidad`). Pantallas nuevas: usar
+  esas clases, **no estilos inline** (el diseño anterior era 100% inline
+  a 12.5px y por eso costaba leerlo). `src/lib/ui.ts` solo sigue vivo
+  para las pantallas desactivadas (Taller, Consignación, Calculadora).
+- **Nunca mostrar claves crudas** (`en_tramite`, `toma_a_cuenta`): los
+  mapas `ESTADO_COMERCIAL`, `ESTADO_DOCUMENTAL`, `ESTADO_VENTA`,
+  `CANAL_LABEL`, etc. viven en `src/lib/helpers.ts`, junto con `fecha()`
+  (parte la cadena a mano: `new Date('2026-07-28')` es UTC y en México
+  mostraría el día anterior), `hoyISO()`, `diasDesde()`, `diasEntre()`.
+- Fuente Inter (Google Fonts), base 15px, menú lateral agrupado ("Ciclo
+  del vehículo" / "Administración") que en celular se abre con botón.
+- **Expediente con pestañas** (`?tab=` en la URL): Resumen, Compra y
+  gastos (admin), Documentación, Publicación (admin/gerencia), Socios
+  (admin).
+- **Compra capturable**: antes una unidad dada de alta con "Nueva unidad"
+  nunca tenía `compra` y ninguna pantalla permitía capturarla, así que
+  `costo_total` = solo gastos (utilidad inflada). Ahora el alta pide la
+  compra (admin) y el Expediente la crea/edita. Si falla la compra al
+  dar de alta o al Adquirir, se borra el vehículo recién creado para no
+  dejarlo a medias. Gastos, subastas y evaluaciones ya se editan y borran.
+- **Bug de sesión corregido** (`auth.tsx`): el perfil se recargaba con
+  cada renovación de token (cada hora / al volver a la pestaña) y
+  `cargando=true` desmontaba toda la app, perdiendo lo capturado. Ahora
+  depende de `session.user.id`. Perfiles inactivos o sin fila en
+  `perfil` ven "Cuenta sin acceso". En Usuarios el admin no puede
+  cambiar su propio rol ni desactivarse.
+- Las capturas de verificación se hacen con Playwright interceptando
+  `*.supabase.co` con datos de ejemplo (el navegador del sandbox no
+  confía en el certificado del proxy); el login real hay que probarlo en
+  un navegador normal.
 
 ## Orden del nav y borradores de formulario
 

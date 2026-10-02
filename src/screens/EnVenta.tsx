@@ -1,29 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
-import { mxn } from '../lib/helpers'
-import { th, td, selectStyle, inputStyle, btnSecundario } from '../lib/ui'
-import { VentaModal } from './Ventas'
+import { mxn, numeroONull, ESTADO_COMERCIAL } from '../lib/helpers'
+import { PageHeader, Alerta, Cargando, NombreUnidad, Badge } from '../components/Ui'
+import { VentaModal } from '../components/VentaModal'
 import type { VehiculoFicha, Venta, Cliente, Comisionista } from '../types'
 
-const COMERCIAL_OPCIONES = ['no_publicado', 'publicado', 'en_consignacion', 'con_referidos', 'apartado', 'vendido']
-const COMERCIAL_LABEL: Record<string, string> = {
-  no_publicado: 'Sin publicar', publicado: 'Publicado', en_consignacion: 'En consignación',
-  con_referidos: 'Con referidos', apartado: 'Apartado', vendido: 'Vendido',
-}
+// 'vendido' no se elige aquí: lo pone el cierre financiero en Ventas.
+const COMERCIAL_EDITABLES = ['no_publicado', 'publicado', 'en_consignacion', 'con_referidos', 'apartado']
 
-/**
- * Unidades que ya llegaron a "listo para venta" y SIGUEN en proceso de
- * venderse (publicado/apartado/etc). En cuanto estado_comercial pasa a
- * 'vendido' el ciclo terminó — esa unidad ya no pertenece aquí, sale a
- * Vendidos. Aquí se administra estado_comercial, ubicación y el precio
- * publicado para el conjunto completo, y también se registra la venta
- * (botón "Registrar venta" — el resultado se ve en Ventas.tsx, que solo
- * muestra unidades que YA tienen una venta en curso, no las publicadas
- * sin comprador).
- */
+/** Unidades listas para vender y aún no vendidas: precio, ubicación, estado y registrar venta. */
 export default function EnVenta() {
   const { perfil } = useAuth()
   const { estados, ubicaciones, cargando: cargandoCatalogos } = useCatalogos()
@@ -34,6 +21,8 @@ export default function EnVenta() {
   const [cargando, setCargando] = useState(true)
   const [guardandoId, setGuardandoId] = useState<number | null>(null)
   const [ventaParaRegistrar, setVentaParaRegistrar] = useState<VehiculoFicha | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
 
   const veMinimo = perfil?.rol === 'admin'
   const puedeVender = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
@@ -41,7 +30,7 @@ export default function EnVenta() {
   async function recargar() {
     if (!supabase) return
     const [v, ve, cl, cm] = await Promise.all([
-      supabase.from('v_vehiculo_ficha').select('*').order('id_interno'),
+      supabase.from('v_vehiculo_ficha').select('*').neq('estado_comercial', 'vendido').order('id_interno'),
       supabase.from('venta').select('vehiculo_id, estado'),
       supabase.from('cliente').select('*').order('nombre'),
       supabase.from('comisionista').select('*').order('nombre'),
@@ -55,87 +44,103 @@ export default function EnVenta() {
 
   useEffect(() => { recargar() }, [])
 
-  const umbralListo = estados.find((e) => e.clave === 'listo')?.orden ?? 70
-  const enVenta = vehiculos.filter((v) => {
-    if (v.estado_comercial === 'vendido') return false
-    const estado = estados.find((e) => e.id === v.estado_proceso_id)
-    return estado && !estado.es_final && estado.orden >= umbralListo
-  })
-
-  function tieneVentaEnCurso(vehiculoId: number) {
-    return ventas.some((ve) => ve.vehiculo_id === vehiculoId && ve.estado !== 'cancelada')
-  }
-
   async function actualizar(vehiculoId: number, cambios: Record<string, unknown>) {
     if (!supabase) return
     setGuardandoId(vehiculoId)
-    await supabase.from('vehiculo').update(cambios).eq('id', vehiculoId)
+    setError(null)
+    setAviso(null)
+    const { error } = await supabase.from('vehiculo').update(cambios).eq('id', vehiculoId)
+    if (error) setError(`No se pudo guardar el cambio: ${error.message}`)
     await recargar()
     setGuardandoId(null)
   }
 
-  if (cargando || cargandoCatalogos) return <p>Cargando…</p>
+  if (cargando || cargandoCatalogos) return <Cargando />
+
+  const umbralListo = estados.find((e) => e.clave === 'listo')?.orden ?? 70
+  const enVenta = vehiculos.filter((v) => {
+    const estado = estados.find((e) => e.id === v.estado_proceso_id)
+    return estado && !estado.es_final && estado.orden >= umbralListo
+  })
+  const ventaEnCurso = (vid: number) => ventas.some((ve) => ve.vehiculo_id === vid && ve.estado === 'en_proceso')
 
   return (
     <div>
-      <h1 style={{ font: '400 26px Georgia, serif', margin: '0 0 4px' }}>En venta</h1>
-      <p style={{ color: '#8b8578', fontSize: 12.5, marginTop: 0, marginBottom: 20 }}>
-        {enVenta.length} unidades listas o en proceso de venta.
-      </p>
+      <PageHeader
+        titulo="En venta"
+        descripcion={`${enVenta.length} unidades listas para vender. Ajusta precio y estado aquí; cuando haya comprador, registra la venta.`}
+      />
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
-        <thead>
-          <tr style={{ background: '#faf9f6' }}>
-            {['Unidad', 'Estado comercial', 'Ubicación', 'Precio autorizado', veMinimo ? 'Precio mínimo' : null, puedeVender ? '' : null].filter((h) => h !== null).map((h, i) => <th key={i} style={th}>{h}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {enVenta.map((v) => {
-            const enCurso = tieneVentaEnCurso(v.id)
-            return (
-              <tr key={v.id} style={{ borderTop: '1px solid #f0ede6', opacity: guardandoId === v.id ? 0.5 : 1 }}>
-                <td style={td}>
-                  <Link to={`/vehiculo/${v.id}`} style={{ color: '#1c1b19' }}>{v.marca} {v.modelo} {v.anio} <span style={{ color: '#8b8578' }}>· {v.id_interno}</span></Link>
-                </td>
-                <td style={td}>
-                  <select value={v.estado_comercial} onChange={(e) => actualizar(v.id, { estado_comercial: e.target.value })} style={selectStyle}>
-                    {COMERCIAL_OPCIONES.map((o) => <option key={o} value={o}>{COMERCIAL_LABEL[o]}</option>)}
-                  </select>
-                </td>
-                <td style={td}>
-                  <select value={v.ubicacion_id} onChange={(e) => actualizar(v.id, { ubicacion_id: Number(e.target.value) })} style={selectStyle}>
-                    {ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
-                  </select>
-                </td>
-                <td style={{ ...td, textAlign: 'right' }}>
-                  <input
-                    type="number"
-                    defaultValue={v.precio_autorizado ?? ''}
-                    onBlur={(e) => {
-                      const val = e.target.value ? Number(e.target.value) : null
-                      if (val !== v.precio_autorizado) actualizar(v.id, { precio_autorizado: val })
-                    }}
-                    style={{ ...inputStyle, width: 110, textAlign: 'right' }}
-                  />
-                </td>
-                {veMinimo && <td style={{ ...td, textAlign: 'right' }}>{mxn(v.precio_minimo)}</td>}
-                {puedeVender && (
-                  <td style={{ ...td, textAlign: 'right' }}>
-                    {enCurso ? (
-                      <span style={{ fontSize: 11.5, color: '#8b8578' }}>Venta en curso</span>
-                    ) : (
-                      <button onClick={() => setVentaParaRegistrar(v)} style={btnSecundario}>Registrar venta</button>
-                    )}
+      {error && <div style={{ marginBottom: 16 }}><Alerta>{error}</Alerta></div>}
+      {aviso && <div style={{ marginBottom: 16 }}><Alerta tipo="ok">{aviso}</Alerta></div>}
+
+      <div className="tabla-wrap">
+        <table className="tabla">
+          <thead>
+            <tr>
+              <th>Unidad</th>
+              <th>Etapa</th>
+              <th>Estado comercial</th>
+              <th>Ubicación</th>
+              <th className="num">Precio autorizado</th>
+              {puedeVender && <th></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {enVenta.map((v) => {
+              const enCurso = ventaEnCurso(v.id)
+              const ocupado = guardandoId === v.id
+              return (
+                <tr key={v.id} className={ocupado ? 'ocupado' : ''}>
+                  <td><NombreUnidad v={v} /></td>
+                  <td>
+                    <select className="select select-chico" value={v.estado_proceso_id} disabled={ocupado}
+                      title="Si la regresas a una etapa anterior, vuelve a En proceso"
+                      onChange={(e) => actualizar(v.id, { estado_proceso_id: Number(e.target.value) })}>
+                      {estados.filter((e) => !e.es_final).map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+                    </select>
                   </td>
-                )}
-              </tr>
-            )
-          })}
-          {enVenta.length === 0 && (
-            <tr><td colSpan={veMinimo ? 6 : 5} style={{ padding: 20, textAlign: 'center', color: '#8b8578' }}>Sin unidades listas para venta todavía.</td></tr>
-          )}
-        </tbody>
-      </table>
+                  <td>
+                    <select className="select select-chico" value={v.estado_comercial} disabled={ocupado}
+                      onChange={(e) => actualizar(v.id, { estado_comercial: e.target.value })}>
+                      {COMERCIAL_EDITABLES.map((o) => <option key={o} value={o}>{ESTADO_COMERCIAL[o].label}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <select className="select select-chico" value={v.ubicacion_id} disabled={ocupado}
+                      onChange={(e) => actualizar(v.id, { ubicacion_id: Number(e.target.value) })}>
+                      {ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                    </select>
+                  </td>
+                  <td className="num">
+                    <input
+                      key={`${v.id}-${v.precio_autorizado}`}
+                      className="input input-chico input-num"
+                      type="number" min={0} style={{ width: 140 }}
+                      defaultValue={v.precio_autorizado ?? ''}
+                      disabled={ocupado}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                      onBlur={(e) => {
+                        const val = numeroONull(e.target.value)
+                        if (val !== v.precio_autorizado) actualizar(v.id, { precio_autorizado: val })
+                      }}
+                    />
+                    {veMinimo && <span className="unidad-folio">Mínimo {mxn(v.precio_minimo)}</span>}
+                  </td>
+                  {puedeVender && (
+                    <td className="acciones-celda">
+                      {enCurso
+                        ? <Badge tono="aviso">Venta en curso</Badge>
+                        : <button className="btn btn-primario btn-chico" onClick={() => setVentaParaRegistrar(v)}>Registrar venta</button>}
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
+            {enVenta.length === 0 && <tr><td colSpan={7} className="vacio">No hay unidades listas para vender.</td></tr>}
+          </tbody>
+        </table>
+      </div>
 
       {ventaParaRegistrar && (
         <VentaModal
@@ -143,7 +148,7 @@ export default function EnVenta() {
           clientes={clientes}
           comisionistas={comisionistas}
           onClose={() => setVentaParaRegistrar(null)}
-          onGuardado={() => { setVentaParaRegistrar(null); recargar() }}
+          onGuardado={() => { setVentaParaRegistrar(null); setAviso('Venta registrada. Ciérrala desde Ventas para calcular la utilidad.'); recargar() }}
         />
       )}
     </div>

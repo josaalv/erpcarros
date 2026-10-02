@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import { mxn } from '../lib/helpers'
+import { useCatalogos } from '../lib/catalogos'
+import { mxn, diasDesde, etiqueta, ESTADO_COMERCIAL } from '../lib/helpers'
+import { PageHeader, Kpi, Alerta, Cargando, EtiquetaBadge, Seccion } from '../components/Ui'
 import type { VehiculoFicha } from '../types'
 
 export default function Panel() {
   const { perfil } = useAuth()
+  const navigate = useNavigate()
+  const { estados } = useCatalogos()
   const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -16,6 +20,7 @@ export default function Panel() {
     supabase
       .from('v_vehiculo_ficha')
       .select('*')
+      .neq('estado_comercial', 'vendido')
       .then(({ data, error }) => {
         if (error) setError(error.message)
         setVehiculos((data ?? []) as VehiculoFicha[])
@@ -23,73 +28,72 @@ export default function Panel() {
       })
   }, [])
 
-  const veCifras = perfil?.rol === 'admin' || perfil?.rol === 'demo'
-  const capital = vehiculos.reduce((acc, v) => acc + (v.costo_total ?? 0), 0)
-  const listas = vehiculos.filter((v) => v.estado_comercial === 'publicado' || v.estado_comercial === 'apartado').length
+  if (cargando) return <Cargando />
 
-  if (cargando) return <p>Cargando…</p>
-  if (error) return <p style={{ color: 'oklch(0.48 0.13 32)' }}>Error consultando Supabase: {error}</p>
+  const veCifras = perfil?.rol === 'admin'
+  const capital = vehiculos.reduce((acc, v) => acc + (v.costo_total ?? 0), 0)
+  const utilidad = vehiculos.reduce((acc, v) => acc + (v.utilidad ?? 0), 0)
+  const umbralListo = estados.find((e) => e.clave === 'listo')?.orden ?? 70
+  const ordenDe = (v: VehiculoFicha) => estados.find((e) => e.id === v.estado_proceso_id)?.orden ?? 0
+  const enPreparacion = vehiculos.filter((v) => ordenDe(v) < umbralListo).length
+  const enVenta = vehiculos.length - enPreparacion
+  const nombreEstado = (id: number) => estados.find((e) => e.id === id)?.nombre ?? '—'
+
+  const ordenados = [...vehiculos].sort((a, b) => (diasDesde(b.fecha_compra) ?? -1) - (diasDesde(a.fecha_compra) ?? -1))
 
   return (
     <div>
-      <h1 style={{ font: '400 26px Georgia, serif', margin: '0 0 4px' }}>Panel</h1>
-      <p style={{ color: '#8b8578', fontSize: 12.5, marginTop: 0, marginBottom: 24 }}>
-        {vehiculos.length} unidades {perfil?.rol === 'demo' ? '(datos de demostración)' : ''}
-      </p>
+      <PageHeader
+        titulo="Panel"
+        descripcion={`Resumen de las unidades activas${perfil?.rol === 'demo' ? ' (datos de demostración)' : ''}.`}
+      />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 28 }}>
-        <Kpi label="Unidades activas" value={String(vehiculos.length)} />
-        <Kpi label="Listas / apartadas" value={String(listas)} />
-        <Kpi label={veCifras ? 'Capital comprometido' : 'Capital comprometido'} value={veCifras ? mxn(capital) : '—'} nota={veCifras ? undefined : 'Sin permiso para ver importes'} />
+      {error && <Alerta>No se pudo consultar la información: {error}</Alerta>}
+
+      <div className="kpis">
+        <Kpi label="Unidades activas" valor={String(vehiculos.length)} />
+        <Kpi label="En preparación" valor={String(enPreparacion)} nota="Compradas, en traslado o en taller" />
+        <Kpi label="Listas para vender" valor={String(enVenta)} />
+        {veCifras && <Kpi label="Capital invertido" valor={mxn(capital)} nota="Compra + gastos de las unidades activas" />}
+        {veCifras && <Kpi label="Utilidad proyectada" valor={mxn(utilidad)} nota="Contra el precio autorizado" />}
       </div>
 
-      <h2 style={{ font: '500 15px "IBM Plex Sans"', borderBottom: '1.5px solid #26302f', paddingBottom: 8, marginBottom: 4 }}>
-        Unidades
-      </h2>
-      <VehiculoTabla vehiculos={vehiculos} veCifras={veCifras} />
+      <Seccion titulo="Unidades activas" descripcion="Las que llevan más días en inventario aparecen primero.">
+        <div className="tabla-wrap">
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>Unidad</th>
+                <th>Etapa</th>
+                <th>Estado comercial</th>
+                <th className="num">Días</th>
+                <th className="num">Precio autorizado</th>
+                {veCifras && <th className="num">Costo</th>}
+                {veCifras && <th className="num">Utilidad</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {ordenados.map((v) => (
+                <tr key={v.id} className="clic" onClick={() => navigate(`/vehiculo/${v.id}`)}>
+                  <td>
+                    <span className="unidad-nombre">{v.marca} {v.modelo} {v.anio}</span>
+                    <span className="unidad-folio">{v.id_interno}</span>
+                  </td>
+                  <td className="texto-suave">{nombreEstado(v.estado_proceso_id)}</td>
+                  <td><EtiquetaBadge etiqueta={etiqueta(ESTADO_COMERCIAL, v.estado_comercial)} /></td>
+                  <td className="num">{diasDesde(v.fecha_compra) ?? '—'}</td>
+                  <td className="num">{mxn(v.precio_autorizado)}</td>
+                  {veCifras && <td className="num">{mxn(v.costo_total)}</td>}
+                  {veCifras && <td className="num">{mxn(v.utilidad)}</td>}
+                </tr>
+              ))}
+              {vehiculos.length === 0 && (
+                <tr><td colSpan={7} className="vacio">Todavía no hay unidades activas.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Seccion>
     </div>
-  )
-}
-
-function Kpi({ label, value, nota }: { label: string; value: string; nota?: string }) {
-  return (
-    <div style={{ background: '#fff', border: '1px solid #e4e0d8', padding: '13px 15px' }}>
-      <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8b8578', marginBottom: 6 }}>{label}</div>
-      <div style={{ font: '400 24px Georgia, serif', color: '#1c1b19' }}>{value}</div>
-      {nota && <div style={{ fontSize: 10.5, color: '#8b8578', marginTop: 4 }}>{nota}</div>}
-    </div>
-  )
-}
-
-export function VehiculoTabla({ vehiculos, veCifras }: { vehiculos: VehiculoFicha[]; veCifras: boolean }) {
-  const navigate = useNavigate()
-  return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
-      <thead>
-        <tr style={{ background: '#faf9f6', textAlign: 'left' }}>
-          {['Unidad', 'Estado', 'Días', 'Precio', veCifras ? 'Costo' : null, veCifras ? 'Utilidad' : null].filter(Boolean).map((h) => (
-            <th key={h} style={{ padding: '9px 10px', borderBottom: '1px solid #e4e0d8', fontSize: 9.5, textTransform: 'uppercase', color: '#6b665c' }}>{h}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {vehiculos.map((v) => {
-          const dias = v.fecha_compra ? Math.floor((Date.now() - new Date(v.fecha_compra).getTime()) / 86400000) : null
-          return (
-            <tr key={v.id} onClick={() => navigate(`/vehiculo/${v.id}`)} style={{ borderTop: '1px solid #f0ede6', cursor: 'pointer' }}>
-              <td style={{ padding: '10px' }}>{v.marca} {v.modelo} {v.anio} <span style={{ color: '#8b8578' }}>· {v.id_interno}</span></td>
-              <td style={{ padding: '10px' }}>{v.estado_comercial}</td>
-              <td style={{ padding: '10px', textAlign: 'right' }}>{dias ?? '—'}</td>
-              <td style={{ padding: '10px', textAlign: 'right' }}>{mxn(v.precio_autorizado)}</td>
-              {veCifras && <td style={{ padding: '10px', textAlign: 'right' }}>{mxn(v.costo_total)}</td>}
-              {veCifras && <td style={{ padding: '10px', textAlign: 'right' }}>{mxn(v.utilidad)}</td>}
-            </tr>
-          )
-        })}
-        {vehiculos.length === 0 && (
-          <tr><td colSpan={veCifras ? 6 : 4} style={{ padding: 20, textAlign: 'center', color: '#8b8578' }}>Sin unidades capturadas todavía.</td></tr>
-        )}
-      </tbody>
-    </table>
   )
 }
