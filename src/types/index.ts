@@ -74,6 +74,8 @@ export interface VehiculoFicha {
   descripcion_breve: string | null
   indicaciones_comisionista: string | null
   comision_ofrecida: number | null
+  subasta_id: number | null
+  torre: string | null
 }
 
 export interface Gasto {

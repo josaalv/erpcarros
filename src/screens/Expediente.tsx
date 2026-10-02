@@ -29,6 +29,7 @@ export default function Expediente() {
   const [aportaciones, setAportaciones] = useState<Aportacion[]>([])
   const [socios, setSocios] = useState<Socio[]>([])
   const [cargando, setCargando] = useState(true)
+  const [subasta, setSubasta] = useState<{ plataforma: string; fecha: string; lote: string | null } | null>(null)
 
   const esAdmin = perfil?.rol === 'admin'
   const esAdminOGerencia = esAdmin || perfil?.rol === 'gerencia'
@@ -44,7 +45,12 @@ export default function Expediente() {
       supabase.from('aportacion').select('*').eq('vehiculo_id', id).order('fecha'),
       supabase.from('socio').select('*').order('nombre'),
     ])
-    setVeh(vehRes.data as VehiculoFicha | null)
+    const ficha = vehRes.data as VehiculoFicha | null
+    setVeh(ficha)
+    if (ficha?.subasta_id) {
+      const { data: sub } = await supabase.from('subasta').select('plataforma, fecha, lote').eq('id', ficha.subasta_id).maybeSingle()
+      setSubasta(sub as { plataforma: string; fecha: string; lote: string | null } | null)
+    } else setSubasta(null)
     setCompra(compraRes.data as Compra | null)
     setGastos((gastosRes.data ?? []) as Gasto[])
     setTiposDocumento((tiposRes.data ?? []) as TipoDocumento[])
@@ -112,6 +118,8 @@ export default function Expediente() {
               <Dato label="Color" valor={veh.color ?? '—'} />
               <Dato label="Transmisión" valor={veh.transmision ? (TRANSMISION_LABEL[veh.transmision] ?? legible(veh.transmision)) : '—'} />
               <Dato label="Fecha de compra" valor={fecha(veh.fecha_compra)} />
+              {subasta && <Dato label="Subasta" valor={`${subasta.plataforma} · ${fecha(subasta.fecha)}${subasta.lote ? ` · lote ${subasta.lote}` : ''}`} />}
+              {veh.torre && <Dato label="Torre" valor={veh.torre} />}
               <Dato label="Documentación" valor={<EtiquetaBadge etiqueta={etiqueta(ESTADO_DOCUMENTAL, veh.estado_documental)} />} />
               {veh.version && <Dato label="Versión" valor={veh.version} />}
               {veh.vin && <Dato label="VIN" valor={veh.vin} />}

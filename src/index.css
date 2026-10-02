@@ -228,3 +228,15 @@ details.plegable summary { cursor: pointer; color: var(--text-soft); font-weight
 .perfil-card { background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 10px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .perfil-card:hover { border-color: var(--primary); background: var(--primary-soft); }
 .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--primary); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; flex-shrink: 0; }
+
+/* ── Asistente por pasos ────────────────────────────────── */
+.pasos { display: flex; gap: 6px; margin-bottom: 22px; flex-wrap: wrap; }
+.paso { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px 8px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-soft); font-size: 14px; font-weight: 500; cursor: pointer; }
+.paso span { width: 24px; height: 24px; border-radius: 50%; background: var(--neutral-soft); display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+.paso.hecho span { background: var(--primary-soft); color: var(--primary); }
+.paso.activo { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.paso.activo span { background: var(--primary); color: #fff; }
+.totales { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; background: var(--primary-soft); border-radius: var(--radius-sm); padding: 14px 16px; margin-top: 16px; }
+.totales .dato-valor { font-size: 19px; }
+.fila-captura { display: grid; grid-template-columns: 2fr 1.4fr 1fr 1fr auto; gap: 8px; align-items: end; }
+@media (max-width: 760px) { .fila-captura { grid-template-columns: 1fr 1fr; } }
