@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
 import { useBorrador } from '../lib/useBorrador'
+import { useParametros } from '../lib/parametros'
 import { mxn, km, fecha, legible, ESQUEMA_COMISION_LABEL } from '../lib/helpers'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, Badge } from '../components/Ui'
 import type { Comisionista as TComisionista, Prospecto, Comision, Cliente, VehiculoFicha } from '../types'
@@ -155,6 +156,7 @@ function ReferidoModal({ comisionistaId, vehiculos, onClose, onGuardado }: {
   onClose: () => void
   onGuardado: () => void
 }) {
+  const { dias_atribucion_referido: dias } = useParametros()
   const [form, setForm, limpiarBorrador] = useBorrador(`borrador:referido:${comisionistaId}`, { nombre: '', telefono: '', vehiculoId: '' })
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
@@ -183,7 +185,7 @@ function ReferidoModal({ comisionistaId, vehiculos, onClose, onGuardado }: {
       vehiculo_id: form.vehiculoId ? Number(form.vehiculoId) : null,
       comisionista_id: comisionistaId,
       etapa: 'nuevo',
-      vence_atribucion: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
+      vence_atribucion: new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10),
     })
 
     setGuardando(false)
@@ -193,7 +195,7 @@ function ReferidoModal({ comisionistaId, vehiculos, onClose, onGuardado }: {
   }
 
   return (
-    <Modal titulo="Nuevo referido" subtitulo="Tu referido queda a tu nombre durante 15 días." onClose={onClose}>
+    <Modal titulo="Nuevo referido" subtitulo={`Tu referido queda a tu nombre durante ${dias} días.`} onClose={onClose}>
       <form onSubmit={onSubmit} className="form">
         <Campo label="Nombre del cliente"><input className="input" required value={form.nombre} onChange={(e) => set('nombre', e.target.value)} autoFocus /></Campo>
         <Campo label="Teléfono"><input className="input" type="tel" value={form.telefono} onChange={(e) => set('telefono', e.target.value)} /></Campo>

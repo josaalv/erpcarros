@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { ROL_LABEL } from '../lib/helpers'
+import { useParametros } from '../lib/parametros'
 import type { Rol } from '../types'
 
 interface ItemNav { to: string; label: string; roles?: Rol[] }
@@ -30,7 +31,7 @@ const GRUPOS: GrupoNav[] = [
     titulo: 'Administración',
     items: [
       { to: '/socios', label: 'Socios', roles: ADMIN },
-      { to: '/usuarios', label: 'Usuarios', roles: ADMIN },
+      { to: '/configuracion', label: 'Configuración', roles: ADMIN },
     ],
   },
   { items: [{ to: '/comisionista', label: 'Mi portal', roles: ['comisionista'] }] },
@@ -38,6 +39,7 @@ const GRUPOS: GrupoNav[] = [
 
 export default function Layout() {
   const { perfil, signOut } = useAuth()
+  const { empresa_nombre } = useParametros()
   const location = useLocation()
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [rutaMenu, setRutaMenu] = useState(location.pathname)
@@ -55,14 +57,14 @@ export default function Layout() {
   return (
     <div className="app">
       <header className="topbar">
-        <strong>ERP Vehículos</strong>
+        <strong>{empresa_nombre}</strong>
         <button onClick={() => setMenuAbierto(true)}>Menú</button>
       </header>
 
       <aside className={`sidebar${menuAbierto ? ' abierto' : ''}`}>
         <div className="sidebar-marca" style={{ justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span>EV</span> ERP Vehículos
+            <span>{empresa_nombre.charAt(0).toUpperCase()}</span> {empresa_nombre}
           </div>
           {menuAbierto && (
             <button className="btn btn-chico" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }} onClick={() => setMenuAbierto(false)}>

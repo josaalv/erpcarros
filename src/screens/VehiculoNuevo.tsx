@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useCatalogos } from '../lib/catalogos'
 import { useAuth } from '../lib/auth'
 import { useBorrador } from '../lib/useBorrador'
+import { useParametros } from '../lib/parametros'
 import { hoyISO, numeroONull } from '../lib/helpers'
 import { PageHeader, Campo, Alerta, Cargando } from '../components/Ui'
 
@@ -20,12 +21,13 @@ export default function VehiculoNuevo() {
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const esAdmin = perfil?.rol === 'admin'
+  const { comision_subasta } = useParametros()
 
   const [form, setForm, limpiarBorrador] = useBorrador('borrador:vehiculo-nuevo', {
     id_interno: '', marca: '', modelo: '', version: '', anio: String(new Date().getFullYear()),
     vin: '', kilometraje: '', color: '', transmision: 'automatica',
     fecha_compra: hoyISO(), precio_minimo: '', precio_autorizado: '',
-    compra_precio: '', compra_comision: '5000', compra_impuestos: '0', compra_iva: '0',
+    compra_precio: '', compra_comision: String(comision_subasta), compra_impuestos: '0', compra_iva: '0',
   })
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
 

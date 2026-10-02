@@ -141,6 +141,32 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
     columnas de una vista existente con `CREATE OR REPLACE VIEW` — las
     columnas nuevas van siempre al final del `SELECT`, nunca intercaladas.
 
+12. `014_indices_fk_faltantes.sql` — índices para 26 FKs sin índice
+    (hallazgo de `get_advisors` performance).
+13. `015_configuracion_parametros_y_borrado_maestro.sql` — tabla
+    `parametro` (empresa, comisión de subasta, margen deseado, días de
+    referido; hook `useParametros()` en `src/lib/parametros.ts`), policies
+    de DELETE que faltaban en `cliente`/`comisionista`/`lote`/`proveedor`,
+    esquema privado `respaldo` (no expuesto en la API) y las funciones
+    `respaldar_y_borrar_unidades(confirmacion)` (admin + frase `BORRAR
+    UNIDADES`: copia a `respaldo.<tabla>_<fecha>` y borra todas las
+    unidades reales con su cascada, más subastas/evaluaciones; conserva
+    catálogos, socios, clientes, comisionistas, usuarios y demo; NO borra
+    archivos de Storage) y `listar_respaldos()`. Restaurar un respaldo es
+    manual por SQL desde esas tablas. **Ojo:** el conector MCP de Supabase
+    pide confirmación al usuario para sentencias con DELETE/DROP; si no la
+    aprueba a tiempo, la llamada se vence a los 60 s sin aplicar nada.
+
+**Configuración** (`src/screens/Configuracion.tsx`, admin): pestañas
+General (parámetros), Catálogos (etapas, ubicaciones, categorías de gasto,
+documentos — `TablaEditable` genérico en `src/components/`), Personas y
+empresas (comisionistas con su usuario ligado, clientes, lotes,
+proveedores), Usuarios (antes pantalla propia; `/usuarios` redirige) y
+Datos y respaldos (botón maestro). Las claves `comprado`, `listo`,
+`vendido` (etapas) y `traslado` (ubicación) las usa el código: se pueden
+renombrar pero no borrar. Opciones de catálogo desactivadas dejan de
+ofrecerse en los selectores pero se conservan en registros existentes.
+
 **Datos reales cargados (es_demo=false):** 19 unidades del negocio real
 (V-1001 a V-1019) con su `compra`/`gasto` desglosado, tomadas de
 `Informacion_cuentas.xlsx` que subió el usuario. **Esto se aplicó

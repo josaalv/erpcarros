@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { ROL_LABEL } from '../lib/helpers'
-import { PageHeader, Alerta, Cargando, Badge } from '../components/Ui'
+import { Alerta, Cargando, Badge } from '../components/Ui'
 import type { Perfil, Rol } from '../types'
 
 const ROLES: Rol[] = ['admin', 'gerencia', 'comisionista', 'demo']
@@ -37,8 +37,11 @@ export default function Usuarios() {
   if (cargando) return <Cargando />
 
   return (
-    <div className="contenido angosto" style={{ marginLeft: 0 }}>
-      <PageHeader titulo="Usuarios" descripcion="Cambia el rol de cada persona o desactiva su acceso. Tu propia cuenta no se puede modificar aquí para que no te quedes fuera." />
+    <div style={{ maxWidth: 820 }}>
+      <p className="texto-suave" style={{ marginTop: 0 }}>
+        Quien se registra entra como Gerencia. Aquí cambias su rol o desactivas su acceso. Tu propia cuenta no se puede
+        modificar aquí para que no te quedes fuera.
+      </p>
 
       {error && <div style={{ marginBottom: 16 }}><Alerta>{error}</Alerta></div>}
 
