@@ -172,6 +172,27 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
     trigger consume la secuencia aunque se haga rollback — regresarla con
     `setval`.
 
+16. `018_vehiculo_motor_stock_notas.sql` — `vehiculo.numero_motor`,
+    `stock_subasta`, `notas` (+ índice en `vin`), al final de
+    `v_vehiculo_ficha`.
+
+**Detector de contrato de Prosubastas** (paso 1 del alta): el usuario sube
+el PDF "Contrato de compraventa a través de subasta" (una unidad por
+página; puede traer varias). `src/lib/contratoPdf.ts` lo lee en el
+navegador con `pdfjs-dist` (import dinámico, no pesa en el bundle
+principal) y `src/lib/contratoTexto.ts` interpreta cada página: marca,
+modelo, serie, año, color, motor (si dice "NV" lo toma de "MOTOR …" en la
+información adicional), torre, stock, fecha/locación de la subasta,
+versión y KM (de la información adicional) y la comisión ("$4000 más
+IVA" → 4640). **El precio, el comprador y el "No 7" NO están en el texto:
+vienen como anotaciones FreeText (escritas con Nitro)** — se leen con
+`getAnnotations()`. Al elegir la unidad se llena el asistente, se liga o
+crea la subasta "Prosubastas" de esa fecha y, al guardar, `pdf-lib` separa
+esa página y se sube como documento `contrato_compraventa` (estado listo).
+Las unidades del PDF cuyo VIN ya existe salen marcadas "ya registrada".
+Probado contra un contrato real del usuario (no está en el repo: tiene
+datos reales y el repo es público).
+
 **Alta de unidad = asistente por pasos** (`src/screens/VehiculoNuevo.tsx`):
 Unidad → Subasta y compra (precio de martillo + comisión fija del
 parámetro; subasta existente o nueva) → Gastos (filas libres con total en

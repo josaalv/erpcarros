@@ -120,10 +120,18 @@ export default function Expediente() {
               <Dato label="Fecha de compra" valor={fecha(veh.fecha_compra)} />
               {subasta && <Dato label="Subasta" valor={`${subasta.plataforma} · ${fecha(subasta.fecha)}${subasta.lote ? ` · lote ${subasta.lote}` : ''}`} />}
               {veh.torre && <Dato label="Torre" valor={veh.torre} />}
+              {veh.stock_subasta && <Dato label="Stock (subasta)" valor={veh.stock_subasta} />}
+              {veh.numero_motor && <Dato label="Número de motor" valor={veh.numero_motor} />}
               <Dato label="Documentación" valor={<EtiquetaBadge etiqueta={etiqueta(ESTADO_DOCUMENTAL, veh.estado_documental)} />} />
               {veh.version && <Dato label="Versión" valor={veh.version} />}
               {veh.vin && <Dato label="VIN" valor={veh.vin} />}
             </div>
+            {veh.notas && (
+              <div style={{ marginTop: 16 }}>
+                <div className="dato-label">Notas</div>
+                <p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{veh.notas}</p>
+              </div>
+            )}
           </div>
 
           <div className="card">
