@@ -7,6 +7,7 @@ import { useBorrador } from '../lib/useBorrador'
 import { useParametros } from '../lib/parametros'
 import { hoyISO, mxn, porcentaje, fecha, numeroONull, ESTADO_DOCUMENTO } from '../lib/helpers'
 import { PageHeader, Campo, Alerta, Cargando, Dato } from '../components/Ui'
+import { leerContratos, extraerPagina, type UnidadContrato } from '../lib/contratoPdf'
 import type { Subasta, Socio, TipoDocumento, CategoriaGasto } from '../types'
 
 interface FilaGasto { descripcion: string; categoriaId: string; importe: string; fecha: string }
@@ -17,6 +18,8 @@ interface Formulario {
   paso: number
   id_interno: string; vin: string; marca: string; modelo: string; version: string; anio: string
   kilometraje: string; color: string; transmision: string
+  numero_motor: string; stock_subasta: string; notas: string
+  contratoPagina: number | null; contratoArchivo: string
   subastaId: string
   nuevaPlataforma: string; nuevaFecha: string; nuevoLote: string; nuevoPatio: string
   torre: string; fecha_compra: string; precio_martillo: string; comision: string
@@ -51,12 +54,19 @@ export default function VehiculoNuevo() {
     paso: 0,
     id_interno: '', vin: '', marca: '', modelo: '', version: '', anio: String(new Date().getFullYear()),
     kilometraje: '', color: '', transmision: 'automatica',
+    numero_motor: '', stock_subasta: '', notas: '', contratoPagina: null, contratoArchivo: '',
     subastaId: '', nuevaPlataforma: 'Prosubastas', nuevaFecha: hoyISO(), nuevoLote: '', nuevoPatio: '',
     torre: '', fecha_compra: hoyISO(), precio_martillo: '', comision: String(comision_subasta),
     gastos: [], socios: [], documentos: {},
     precio_autorizado: '', precio_minimo: '',
   })
   const set = <K extends keyof Formulario>(k: K, v: Formulario[K]) => setF((x) => ({ ...x, [k]: v }))
+  // El archivo no cabe en el borrador de localStorage: si se recarga la página hay que volver a subirlo.
+  const [archivoContrato, setArchivoContrato] = useState<File | null>(null)
+  const [unidadesContrato, setUnidadesContrato] = useState<UnidadContrato[]>([])
+  const [vinsRegistrados, setVinsRegistrados] = useState<Set<string>>(new Set())
+  const [leyendo, setLeyendo] = useState(false)
+  const [avisoContrato, setAvisoContrato] = useState<string | null>(null)
 
   useEffect(() => {
     if (!supabase) return
@@ -95,6 +105,51 @@ export default function VehiculoNuevo() {
   const margen = precioVenta > 0 ? (precioVenta - costoTotal) / precioVenta : null
   const estadoDoc = (t: TipoDocumento): EstadoDoc => f.documentos[t.id] ?? 'faltante'
   const subastaElegida = subastas.find((s) => String(s.id) === f.subastaId)
+
+  async function cargarContrato(archivo: File) {
+    setLeyendo(true)
+    setAvisoContrato(null)
+    try {
+      const unidades = await leerContratos(archivo)
+      if (unidades.length === 0) {
+        setAvisoContrato('No se encontró ninguna unidad en ese PDF. ¿Es el contrato de compraventa de Prosubastas?')
+        return
+      }
+      setArchivoContrato(archivo)
+      setUnidadesContrato(unidades)
+      const vins = unidades.map((u) => u.vin).filter(Boolean)
+      if (supabase && vins.length) {
+        const { data } = await supabase.from('vehiculo').select('vin').in('vin', vins)
+        setVinsRegistrados(new Set(((data ?? []) as { vin: string }[]).map((v) => v.vin)))
+      }
+      if (unidades.length === 1) aplicarUnidad(unidades[0], archivo)
+    } catch (e) {
+      setAvisoContrato(`No se pudo leer el PDF: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setLeyendo(false)
+    }
+  }
+
+  function aplicarUnidad(u: UnidadContrato, archivo: File) {
+    const existente = subastas.find((s) => s.fecha === u.fechaSubasta && /prosubasta|promotora/i.test(s.plataforma))
+    const contrato = tipos.find((t) => t.clave === 'contrato_compraventa')
+    const comision = u.comisionBase !== null ? Math.round(u.comisionBase * (u.ivaComision ? 1.16 : 1) * 100) / 100 : null
+    setF((x) => ({
+      ...x,
+      vin: u.vin || x.vin, marca: u.marca || x.marca, modelo: u.modelo || x.modelo, version: u.version || x.version,
+      anio: u.anio || x.anio, color: u.color || x.color, kilometraje: u.kilometraje || x.kilometraje,
+      transmision: u.transmision || x.transmision, numero_motor: u.numeroMotor, stock_subasta: u.stock,
+      notas: u.informacionAdicional, torre: u.torre || x.torre,
+      subastaId: existente ? String(existente.id) : (u.fechaSubasta ? NUEVA : x.subastaId),
+      nuevaPlataforma: 'Prosubastas', nuevaFecha: u.fechaSubasta || x.nuevaFecha, nuevoPatio: u.locacion, nuevoLote: '',
+      fecha_compra: u.fechaSubasta || x.fecha_compra,
+      precio_martillo: u.precio || x.precio_martillo,
+      comision: comision !== null ? String(comision) : x.comision,
+      documentos: contrato ? { ...x.documentos, [contrato.id]: 'completo' } : x.documentos,
+      contratoPagina: u.pagina, contratoArchivo: archivo.name,
+    }))
+    setAvisoContrato(`Se cargaron los datos de ${u.marca} ${u.modelo} ${u.anio} (página ${u.pagina}). Revísalos antes de seguir.`)
+  }
 
   function validar(paso: number): string | null {
     if (paso === 0) {
@@ -158,6 +213,7 @@ export default function VehiculoNuevo() {
       ubicacion_id: (ubicaciones.find((u) => u.clave === 'traslado') ?? ubicaciones[0])?.id,
       fecha_compra: f.fecha_compra || null,
       subasta_id: subastaId, torre: f.torre.trim() || null,
+      numero_motor: f.numero_motor.trim() || null, stock_subasta: f.stock_subasta.trim() || null, notas: f.notas.trim() || null,
       estado_documental: estadoDocumental,
       precio_autorizado: numeroONull(f.precio_autorizado),
       precio_minimo: esAdmin ? numeroONull(f.precio_minimo) : null,
@@ -169,6 +225,24 @@ export default function VehiculoNuevo() {
       setError(`No se pudo guardar la unidad: ${errVeh?.message}`)
       set('paso', 0)
       return
+    }
+
+    const tipoContrato = tipos.find((t) => t.clave === 'contrato_compraventa')
+    let rutaContrato: string | null = null
+    if (archivoContrato && f.contratoPagina && tipoContrato) {
+      try {
+        const pdf = await extraerPagina(archivoContrato, f.contratoPagina)
+        const ruta = `${veh.id}/${tipoContrato.id}/${Date.now()}-contrato-compraventa.pdf`
+        const { error: errSubida } = await supabase.storage.from('documentos-vehiculo').upload(ruta, pdf, { contentType: 'application/pdf' })
+        if (errSubida) throw new Error(errSubida.message)
+        rutaContrato = ruta
+      } catch (e) {
+        await supabase.from('vehiculo').delete().eq('id', veh.id)
+        if (subastaCreada) await supabase.from('subasta').delete().eq('id', subastaCreada)
+        setGuardando(false)
+        setError(`No se pudo guardar el contrato, así que no se guardó nada: ${e instanceof Error ? e.message : String(e)}`)
+        return
+      }
     }
 
     const pasosGuardado: { nombre: string; correr: () => PromiseLike<{ error: { message: string } | null }> }[] = []
@@ -188,6 +262,7 @@ export default function VehiculoNuevo() {
       return {
         vehiculo_id: veh.id, tipo_documento_id: t.id, activo: e !== 'no_aplica',
         estado: e === 'no_aplica' ? 'faltante' : e, fecha_obtencion: e === 'completo' ? hoyISO() : null,
+        archivo_path: rutaContrato && t.id === tipoContrato?.id ? rutaContrato : null,
       }
     })) })
 
@@ -195,6 +270,7 @@ export default function VehiculoNuevo() {
       const { error } = await p.correr()
       if (error) {
         // Deshacer: la cascada de vehiculo se lleva lo que ya se haya guardado.
+        if (rutaContrato) await supabase.storage.from('documentos-vehiculo').remove([rutaContrato])
         await supabase.from('vehiculo').delete().eq('id', veh.id)
         if (subastaCreada) await supabase.from('subasta').delete().eq('id', subastaCreada)
         setGuardando(false)
@@ -229,6 +305,41 @@ export default function VehiculoNuevo() {
       <div className="card">
         {pasoActual === 0 && (
           <div className="form">
+            <div className="resumen" style={{ gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <strong style={{ fontSize: 15 }}>¿Tienes el contrato de compraventa de Prosubastas?</strong>
+                  <div className="texto-muted">Súbelo (PDF) y se llenan los datos solos. El contrato se guarda en los documentos de la unidad.</div>
+                </div>
+                <label className="btn btn-secundario" style={{ cursor: leyendo ? 'default' : 'pointer' }}>
+                  {leyendo ? 'Leyendo…' : archivoContrato ? 'Cambiar PDF' : 'Subir contrato (PDF)'}
+                  <input type="file" accept="application/pdf,.pdf" style={{ display: 'none' }} disabled={leyendo}
+                    onChange={(e) => { const a = e.target.files?.[0]; if (a) cargarContrato(a); e.target.value = '' }} />
+                </label>
+              </div>
+              {unidadesContrato.length > 1 && (
+                <div>
+                  <div className="dato-label" style={{ marginBottom: 6 }}>El PDF trae {unidadesContrato.length} unidades. Elige cuál vas a dar de alta:</div>
+                  <div className="chips" style={{ marginBottom: 0 }}>
+                    {unidadesContrato.map((u) => {
+                      const ya = vinsRegistrados.has(u.vin)
+                      return (
+                        <button key={u.pagina} type="button" disabled={ya}
+                          className={`chip${f.contratoPagina === u.pagina && f.contratoArchivo === archivoContrato?.name ? ' activa' : ''}`}
+                          title={ya ? 'Ya está registrada (mismo número de serie)' : undefined}
+                          onClick={() => archivoContrato && aplicarUnidad(u, archivoContrato)}>
+                          {u.marca} {u.modelo} {u.anio} · {mxn(Number(u.precio))}{ya ? ' · ya registrada' : ''}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {avisoContrato && <div className="texto-suave">{avisoContrato}</div>}
+              {f.contratoPagina && !archivoContrato && (
+                <Alerta tipo="aviso">Se recargó la página: vuelve a subir el contrato ({f.contratoArchivo}) para que se guarde en los documentos.</Alerta>
+              )}
+            </div>
             <div className="card-titulo">Datos de la unidad</div>
             <div className="form-grid">
               <Campo label="Folio interno" ayuda="Se asigna solo al guardar (V-1020, V-1021…)">
@@ -252,7 +363,11 @@ export default function VehiculoNuevo() {
                   <option value="otra">Otra</option>
                 </select>
               </Campo>
+              <Campo label="Número de motor"><input className="input" value={f.numero_motor} onChange={(e) => set('numero_motor', e.target.value)} /></Campo>
             </div>
+            <Campo label="Notas" ayuda="Del contrato: papeles, tenencias, llaves, adeudos…">
+              <textarea className="textarea" rows={3} value={f.notas} onChange={(e) => set('notas', e.target.value)} />
+            </Campo>
           </div>
         )}
 
@@ -281,6 +396,7 @@ export default function VehiculoNuevo() {
             {subastaElegida?.patio_origen && <p className="texto-muted" style={{ margin: 0 }}>Patio de origen: {subastaElegida.patio_origen}</p>}
             <div className="form-grid">
               <Campo label="Torre"><input className="input" value={f.torre} onChange={(e) => set('torre', e.target.value)} /></Campo>
+              <Campo label="Stock (subasta)"><input className="input" value={f.stock_subasta} onChange={(e) => set('stock_subasta', e.target.value)} /></Campo>
               <Campo label="Fecha de compra" ayuda="Desde aquí se cuentan los días en inventario"><input className="input" type="date" value={f.fecha_compra} onChange={(e) => set('fecha_compra', e.target.value)} /></Campo>
             </div>
             <div className="form-grid">
@@ -351,6 +467,7 @@ export default function VehiculoNuevo() {
               <Dato label="Folio" valor="Se asigna al guardar" />
               {esAdmin && <Dato label="Subasta" valor={f.subastaId === NUEVA ? `${f.nuevaPlataforma} · ${fecha(f.nuevaFecha)} (nueva)` : subastaElegida ? `${subastaElegida.plataforma} · ${fecha(subastaElegida.fecha)}` : 'Sin subasta'} />}
               <Dato label="Fecha de compra" valor={fecha(f.fecha_compra)} />
+              {f.contratoPagina && <Dato label="Contrato" valor={archivoContrato ? 'Se adjunta al guardar' : 'Falta volver a subirlo'} />}
             </div>
             {esAdmin && (
               <div className="totales">
