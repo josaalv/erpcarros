@@ -161,6 +161,21 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
     ese aviso no le llega al usuario: la llamada se vence a los 60 s sin
     aplicar nada. Diseñar para no necesitarlas vía MCP.
 
+14. `016_vehiculo_subasta_y_torre.sql` — `vehiculo.subasta_id` (FK sin
+    acción al borrar: el borrado maestro elimina unidades antes que
+    subastas) y `vehiculo.torre`, expuestas al final de `v_vehiculo_ficha`.
+
+**Alta de unidad = asistente por pasos** (`src/screens/VehiculoNuevo.tsx`):
+Unidad → Subasta y compra (precio de martillo + comisión fija del
+parámetro; subasta existente o nueva) → Gastos (filas libres con total en
+vivo) → Socios (monto o % sobre el costo total; la participación sale del
+monto / total aportado, igual que `v_participacion_socio`) → Documentos y
+precio → Resumen. Todo vive en un borrador de localStorage y se guarda al
+final en orden; si falla un paso después de crear el vehículo se borra (la
+cascada limpia) y la subasta recién creada también. Gerencia solo ve
+Unidad, Documentos y Resumen (compra/gasto/aportación/subasta son admin).
+La carga por Excel queda para después (pedido del usuario).
+
 **Configuración** (`src/screens/Configuracion.tsx`, admin): pestañas
 General (parámetros), Catálogos (etapas, ubicaciones, categorías de gasto,
 documentos — `TablaEditable` genérico en `src/components/`), Personas y

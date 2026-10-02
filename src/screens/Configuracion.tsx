@@ -353,7 +353,7 @@ function BorrarModal({ unidades, onClose, onHecho }: { unidades: number; onClose
     if (error) { setBorrando(false); setError(`No se pudo hacer el respaldo, no se borró nada: ${error.message}`); return }
     const r = data as { sufijo: string; respaldado: Record<string, number> }
 
-    for (const tabla of ['evaluacion_puja', 'subasta', 'vehiculo'] as const) {
+    for (const tabla of ['evaluacion_puja', 'vehiculo', 'subasta'] as const) {
       const { error: errBorrar } = await supabase.from(tabla).delete().eq('es_demo', false)
       if (errBorrar) {
         setBorrando(false)
