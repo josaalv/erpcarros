@@ -4,8 +4,8 @@
 --    sin ellas esas tablas eran de solo-alta. El FK sigue impidiendo borrar
 --    un registro con historial.
 -- 3) Botón maestro: respalda en el esquema privado `respaldo` (no expuesto en
---    la API) y borra todas las unidades reales con lo que cuelga de ellas,
---    más subastas y evaluaciones. Conserva catálogos, socios, clientes,
+--    la API); luego la app borra todas las unidades reales con lo que cuelga
+--    de ellas, más subastas y evaluaciones. Conserva catálogos, socios, clientes,
 --    comisionistas, usuarios y los datos de demostración (es_demo = true).
 --    Los archivos de Storage NO se borran: quedan como parte del respaldo.
 
@@ -46,7 +46,12 @@ create table if not exists respaldo.bitacora (
   conteos jsonb not null
 );
 
-create or replace function public.respaldar_y_borrar_unidades(confirmacion text)
+-- Solo respalda; el borrado lo hace la app con la sesión del admin (RLS
+-- vehiculo_delete / subasta_admin / evaluacion_admin), igual que "Eliminar
+-- unidad" en el Expediente. Así la función no contiene DELETE: el conector
+-- MCP pide una confirmación para esas sentencias que en sesiones en la nube
+-- nunca llega al usuario y la llamada se vence.
+create or replace function public.respaldar_unidades()
 returns jsonb
 language plpgsql
 security definer
@@ -63,12 +68,8 @@ declare
   tiene_demo boolean;
 begin
   if not es_admin() then
-    raise exception 'Solo el administrador puede borrar la información.';
+    raise exception 'Solo el administrador puede respaldar la información.';
   end if;
-  if confirmacion is distinct from 'BORRAR UNIDADES' then
-    raise exception 'Frase de confirmación incorrecta.';
-  end if;
-
   foreach t in array tablas loop
     select exists (select 1 from information_schema.columns
       where table_schema = 'public' and table_name = t and column_name = 'es_demo') into tiene_demo;
@@ -77,11 +78,6 @@ begin
     get diagnostics n = row_count;
     conteos := conteos || jsonb_build_object(t, n);
   end loop;
-
-  delete from public.evaluacion_puja where es_demo = false;
-  delete from public.subasta where es_demo = false;
-  delete from public.vehiculo where es_demo = false;
-
   insert into respaldo.bitacora (usuario, sufijo, conteos) values (auth.uid(), sufijo, conteos);
   return jsonb_build_object('sufijo', sufijo, 'respaldado', conteos);
 end;
@@ -100,7 +96,7 @@ as $$
   order by b.creado desc;
 $$;
 
-revoke execute on function public.respaldar_y_borrar_unidades(text) from public, anon;
+revoke execute on function public.respaldar_unidades() from public, anon;
 revoke execute on function public.listar_respaldos() from public, anon;
-grant execute on function public.respaldar_y_borrar_unidades(text) to authenticated;
+grant execute on function public.respaldar_unidades() to authenticated;
 grant execute on function public.listar_respaldos() to authenticated;

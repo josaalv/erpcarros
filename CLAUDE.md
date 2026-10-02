@@ -148,14 +148,18 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
     referido; hook `useParametros()` en `src/lib/parametros.ts`), policies
     de DELETE que faltaban en `cliente`/`comisionista`/`lote`/`proveedor`,
     esquema privado `respaldo` (no expuesto en la API) y las funciones
-    `respaldar_y_borrar_unidades(confirmacion)` (admin + frase `BORRAR
-    UNIDADES`: copia a `respaldo.<tabla>_<fecha>` y borra todas las
-    unidades reales con su cascada, más subastas/evaluaciones; conserva
-    catálogos, socios, clientes, comisionistas, usuarios y demo; NO borra
-    archivos de Storage) y `listar_respaldos()`. Restaurar un respaldo es
+    `respaldar_unidades()` (admin: copia las filas reales a
+    `respaldo.<tabla>_<fecha>` y anota en `respaldo.bitacora`) y
+    `listar_respaldos()`. El botón maestro (frase `BORRAR UNIDADES`) llama
+    al respaldo y, solo si sale bien, la app borra `evaluacion_puja`,
+    `subasta` y `vehiculo` con `es_demo = false` por RLS de admin (la
+    cascada hace el resto); conserva catálogos, socios, clientes,
+    comisionistas, usuarios y demo; NO borra archivos de Storage. Restaurar un respaldo es
     manual por SQL desde esas tablas. **Ojo:** el conector MCP de Supabase
-    pide confirmación al usuario para sentencias con DELETE/DROP; si no la
-    aprueba a tiempo, la llamada se vence a los 60 s sin aplicar nada.
+    pide confirmación para cualquier sentencia que contenga DELETE/DROP
+    (aunque sea dentro del cuerpo de una función) y en sesiones en la nube
+    ese aviso no le llega al usuario: la llamada se vence a los 60 s sin
+    aplicar nada. Diseñar para no necesitarlas vía MCP.
 
 **Configuración** (`src/screens/Configuracion.tsx`, admin): pestañas
 General (parámetros), Catálogos (etapas, ubicaciones, categorías de gasto,

@@ -342,14 +342,26 @@ function BorrarModal({ unidades, onClose, onHecho }: { unidades: number; onClose
   const [borrando, setBorrando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Primero el respaldo (función en la base); solo si sale bien se borra. El
+  // borrado va por RLS como admin: la cascada de vehiculo se lleva compra,
+  // gastos, documentos, ventas, cierres, etc. Los datos demo no se tocan.
   async function borrar() {
-    if (!supabase) return
+    if (!supabase || confirmacion !== FRASE) return
     setBorrando(true)
     setError(null)
-    const { data, error } = await supabase.rpc('respaldar_y_borrar_unidades', { confirmacion })
-    setBorrando(false)
-    if (error) { setError(error.message); return }
+    const { data, error } = await supabase.rpc('respaldar_unidades')
+    if (error) { setBorrando(false); setError(`No se pudo hacer el respaldo, no se borró nada: ${error.message}`); return }
     const r = data as { sufijo: string; respaldado: Record<string, number> }
+
+    for (const tabla of ['evaluacion_puja', 'subasta', 'vehiculo'] as const) {
+      const { error: errBorrar } = await supabase.from(tabla).delete().eq('es_demo', false)
+      if (errBorrar) {
+        setBorrando(false)
+        setError(`El respaldo ${r.sufijo} se guardó, pero falló el borrado de ${tabla}: ${errBorrar.message}. Puedes volver a intentarlo.`)
+        return
+      }
+    }
+    setBorrando(false)
     onHecho(`Listo. Se respaldaron y borraron ${r.respaldado.vehiculo ?? 0} unidades y ${r.respaldado.gasto ?? 0} gastos (respaldo ${r.sufijo}). Ya puedes cargar la información oficial.`)
   }
 
