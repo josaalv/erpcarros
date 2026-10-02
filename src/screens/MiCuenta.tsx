@@ -1,12 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '../lib/auth'
 import { ROL_LABEL } from '../lib/helpers'
-import { inputStyle, btnPrimario } from '../lib/ui'
+import { PageHeader, Campo, Alerta } from '../components/Ui'
 
-/** Cambiar contraseña estando ya dentro del sistema — antes solo existía
- * el flujo de "olvidé mi contraseña" desde el login. */
 export default function MiCuenta() {
-  const { perfil, actualizarPassword } = useAuth()
+  const { perfil, session, actualizarPassword } = useAuth()
   const [nueva, setNueva] = useState('')
   const [confirmar, setConfirmar] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -29,32 +27,34 @@ export default function MiCuenta() {
   }
 
   return (
-    <div style={{ maxWidth: 420 }}>
-      <h1 style={{ font: '400 26px Georgia, serif', margin: '0 0 4px' }}>Mi cuenta</h1>
-      <p style={{ color: '#8b8578', fontSize: 12.5, marginTop: 0, marginBottom: 24 }}>
-        {perfil?.nombre} · {perfil ? ROL_LABEL[perfil.rol] : ''}
-      </p>
+    <div style={{ maxWidth: 520 }}>
+      <PageHeader titulo="Mi cuenta" />
 
-      <div style={{ background: '#fff', border: '1px solid #e4e0d8', padding: 18 }}>
-        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8b8578', marginBottom: 14 }}>
-          Cambiar contraseña
+      <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div className="avatar">{perfil?.nombre.charAt(0).toUpperCase()}</div>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 17 }}>{perfil?.nombre}</div>
+          <div className="texto-suave">{perfil ? ROL_LABEL[perfil.rol] : ''} · {session?.user.email}</div>
         </div>
-        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12.5, color: '#55524b' }}>
-            Nueva contraseña
-            <input type="password" value={nueva} onChange={(e) => setNueva(e.target.value)} style={inputStyle} minLength={6} required />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12.5, color: '#55524b' }}>
-            Confirmar contraseña
-            <input type="password" value={confirmar} onChange={(e) => setConfirmar(e.target.value)} style={inputStyle} minLength={6} required />
-          </label>
-          {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
-          {ok && <div style={{ fontSize: 11.5, color: 'oklch(0.45 0.09 150)' }}>Contraseña actualizada ✓</div>}
-          <button type="submit" disabled={guardando} style={{ ...btnPrimario, marginTop: 4, alignSelf: 'flex-start' }}>
-            {guardando ? 'Guardando…' : 'Actualizar contraseña'}
-          </button>
-        </form>
       </div>
+
+      <form className="card" onSubmit={onSubmit}>
+        <div className="card-titulo">Cambiar contraseña</div>
+        <p className="card-sub">Mínimo 6 caracteres.</p>
+        <div className="form">
+          <Campo label="Nueva contraseña">
+            <input className="input" type="password" value={nueva} onChange={(e) => setNueva(e.target.value)} minLength={6} required autoComplete="new-password" />
+          </Campo>
+          <Campo label="Confirmar contraseña">
+            <input className="input" type="password" value={confirmar} onChange={(e) => setConfirmar(e.target.value)} minLength={6} required autoComplete="new-password" />
+          </Campo>
+          {error && <Alerta>{error}</Alerta>}
+          {ok && <Alerta tipo="ok">Contraseña actualizada.</Alerta>}
+          <div className="form-acciones">
+            <button type="submit" className="btn btn-primario" disabled={guardando}>{guardando ? 'Guardando…' : 'Actualizar contraseña'}</button>
+          </div>
+        </div>
+      </form>
     </div>
   )
 }

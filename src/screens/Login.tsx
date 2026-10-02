@@ -3,6 +3,7 @@ import { useAuth } from '../lib/auth'
 import { supabase, hasSupabase } from '../lib/supabase'
 import { ROL_LABEL } from '../lib/helpers'
 import type { PerfilPublico } from '../types'
+import { Campo, Alerta } from '../components/Ui'
 
 type Paso = 'picker' | 'password' | 'registro' | 'forgot' | 'reset'
 
@@ -109,46 +110,41 @@ export default function Login() {
 
   if (!hasSupabase) {
     return (
-      <div style={estilos.pagina}>
-        <div style={estilos.tarjeta}>
-          <p>Falta configurar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.</p>
+      <div className="login-pagina">
+        <div className="login-tarjeta">
+          <Alerta>Falta configurar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.</Alerta>
         </div>
       </div>
     )
   }
 
+  const volver = (texto: string, accion: () => void) => (
+    <button type="button" className="btn-link" style={{ padding: 0, marginBottom: 18, color: 'var(--text-soft)' }} onClick={accion}>← {texto}</button>
+  )
+
   return (
-    <div style={estilos.pagina}>
-      <div style={estilos.tarjeta}>
-        <div style={estilos.marca}>ERP Vehículos</div>
+    <div className="login-pagina">
+      <div className="login-tarjeta">
+        <div className="login-marca"><span>EV</span> ERP Vehículos</div>
 
         {paso === 'reset' && (
           <>
-            <h1 style={estilos.titulo}>Nueva contraseña</h1>
+            <h1 style={{ fontSize: 24, marginBottom: 16 }}>Nueva contraseña</h1>
             {resetOk ? (
-              <>
-                <div style={estilos.aviso}>Contraseña actualizada. Ya puedes seguir usando el sistema.</div>
-                <button
-                  style={{ ...estilos.boton, marginTop: 6 }}
-                  onClick={() => { setResetOk(false); clearPasswordRecovery(); setPaso('picker') }}
-                >
-                  Continuar
-                </button>
-              </>
+              <div className="form">
+                <Alerta tipo="ok">Contraseña actualizada. Ya puedes seguir usando el sistema.</Alerta>
+                <button className="btn btn-primario" onClick={() => { setResetOk(false); clearPasswordRecovery(); setPaso('picker') }}>Continuar</button>
+              </div>
             ) : (
-              <form onSubmit={confirmarNuevaPassword} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <label style={estilos.campo}>
-                  Nueva contraseña
-                  <input style={estilos.input} type="password" value={resetPassword} onChange={(e) => { setResetPassword(e.target.value); setError(null) }} required minLength={6} autoFocus />
-                </label>
-                <label style={estilos.campo}>
-                  Confirmar contraseña
-                  <input style={estilos.input} type="password" value={resetConfirmar} onChange={(e) => { setResetConfirmar(e.target.value); setError(null) }} required minLength={6} />
-                </label>
-                {error && <div style={estilos.error}>{error}</div>}
-                <button style={estilos.boton} type="submit" disabled={enviando}>
-                  {enviando ? 'Guardando…' : 'Guardar contraseña'}
-                </button>
+              <form onSubmit={confirmarNuevaPassword} className="form">
+                <Campo label="Nueva contraseña">
+                  <input className="input" type="password" value={resetPassword} onChange={(e) => { setResetPassword(e.target.value); setError(null) }} required minLength={6} autoFocus autoComplete="new-password" />
+                </Campo>
+                <Campo label="Confirmar contraseña">
+                  <input className="input" type="password" value={resetConfirmar} onChange={(e) => { setResetConfirmar(e.target.value); setError(null) }} required minLength={6} autoComplete="new-password" />
+                </Campo>
+                {error && <Alerta>{error}</Alerta>}
+                <button className="btn btn-primario" type="submit" disabled={enviando}>{enviando ? 'Guardando…' : 'Guardar contraseña'}</button>
               </form>
             )}
           </>
@@ -156,23 +152,18 @@ export default function Login() {
 
         {paso === 'forgot' && (
           <>
-            <button type="button" style={estilos.volver} onClick={() => { setPaso('picker'); setForgotCorreo(''); setForgotEnviado(false); setError(null) }}>
-              ← Volver
-            </button>
-            <h1 style={estilos.titulo}>Recuperar contraseña</h1>
+            {volver('Volver', () => { setPaso('picker'); setForgotCorreo(''); setForgotEnviado(false); setError(null) })}
+            <h1 style={{ fontSize: 24, marginBottom: 8 }}>Recuperar contraseña</h1>
             {forgotEnviado ? (
-              <div style={estilos.aviso}>Revisa tu correo. Si el email está registrado, recibirás un enlace en breve.</div>
+              <Alerta tipo="ok">Revisa tu correo. Si está registrado, recibirás un enlace en unos minutos.</Alerta>
             ) : (
-              <form onSubmit={pedirRecuperacion} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <p style={{ fontSize: 12.5, color: '#8b8578', margin: 0 }}>Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.</p>
-                <label style={estilos.campo}>
-                  Correo electrónico
-                  <input style={estilos.input} type="email" value={forgotCorreo} onChange={(e) => { setForgotCorreo(e.target.value); setError(null) }} required autoFocus />
-                </label>
-                {error && <div style={estilos.error}>{error}</div>}
-                <button style={estilos.boton} type="submit" disabled={enviando}>
-                  {enviando ? 'Enviando…' : 'Enviar enlace'}
-                </button>
+              <form onSubmit={pedirRecuperacion} className="form">
+                <p className="texto-suave" style={{ margin: 0 }}>Te enviaremos un enlace para crear una contraseña nueva.</p>
+                <Campo label="Correo electrónico">
+                  <input className="input" type="email" value={forgotCorreo} onChange={(e) => { setForgotCorreo(e.target.value); setError(null) }} required autoFocus />
+                </Campo>
+                {error && <Alerta>{error}</Alerta>}
+                <button className="btn btn-primario" type="submit" disabled={enviando}>{enviando ? 'Enviando…' : 'Enviar enlace'}</button>
               </form>
             )}
           </>
@@ -180,30 +171,31 @@ export default function Login() {
 
         {paso === 'picker' && (
           <>
-            <h1 style={estilos.titulo}>¿Quién eres?</h1>
-            <p style={{ fontSize: 12.5, color: '#8b8578', margin: '0 0 16px' }}>Selecciona tu perfil para entrar.</p>
+            <h1 style={{ fontSize: 24 }}>¿Quién eres?</h1>
+            <p className="texto-suave" style={{ margin: '4px 0 0' }}>Elige tu perfil para entrar.</p>
+            {aviso && <div style={{ marginTop: 14 }}><Alerta tipo="ok">{aviso}</Alerta></div>}
 
             {cargandoPerfiles ? (
-              <p style={{ fontSize: 13, color: '#8b8578' }}>Cargando perfiles…</p>
+              <div className="cargando">Cargando perfiles…</div>
             ) : errorCarga ? (
-              <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                <div style={estilos.error}>{errorCarga}</div>
-                <button type="button" style={{ ...estilos.enlace, marginTop: 8 }} onClick={cargarPerfiles}>Reintentar</button>
+              <div style={{ marginTop: 16 }}>
+                <Alerta>{errorCarga}</Alerta>
+                <button type="button" className="btn btn-secundario" style={{ marginTop: 10 }} onClick={cargarPerfiles}>Reintentar</button>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10, marginBottom: 8 }}>
+              <div className="perfiles">
                 {perfiles.map((p) => (
-                  <button key={p.id} type="button" onClick={() => elegirPerfil(p)} style={estilos.perfilCard}>
-                    <div style={estilos.avatar}>{p.nombre.charAt(0).toUpperCase()}</div>
-                    <div style={{ fontWeight: 500, fontSize: 12.5 }}>{p.nombre.split(' ')[0]}</div>
-                    <div style={{ fontSize: 10.5, color: '#8b8578' }}>{ROL_LABEL[p.rol]}</div>
+                  <button key={p.id} type="button" onClick={() => elegirPerfil(p)} className="perfil-card">
+                    <div className="avatar">{p.nombre.charAt(0).toUpperCase()}</div>
+                    <div style={{ fontWeight: 600 }}>{p.nombre.split(' ')[0]}</div>
+                    <div className="texto-muted" style={{ fontSize: 12.5 }}>{ROL_LABEL[p.rol]}</div>
                   </button>
                 ))}
-                {perfiles.length === 0 && <p style={{ fontSize: 12.5, color: '#8b8578' }}>Sin cuentas activas todavía.</p>}
+                {perfiles.length === 0 && <p className="texto-suave">Todavía no hay cuentas activas.</p>}
               </div>
             )}
 
-            <button type="button" style={estilos.enlace} onClick={() => { setPaso('registro'); setError(null); setAviso(null) }}>
+            <button type="button" className="btn-link" style={{ marginTop: 10 }} onClick={() => { setPaso('registro'); setError(null); setAviso(null) }}>
               ¿No tienes cuenta? Regístrate
             </button>
           </>
@@ -211,26 +203,21 @@ export default function Login() {
 
         {paso === 'password' && seleccionado && (
           <>
-            <button type="button" style={estilos.volver} onClick={() => { setPaso('picker'); setSeleccionado(null) }}>
-              ← Cambiar perfil
-            </button>
+            {volver('Cambiar de perfil', () => { setPaso('picker'); setSeleccionado(null) })}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-              <div style={{ ...estilos.avatar, width: 46, height: 46, fontSize: 17 }}>{seleccionado.nombre.charAt(0).toUpperCase()}</div>
+              <div className="avatar" style={{ width: 50, height: 50, fontSize: 19 }}>{seleccionado.nombre.charAt(0).toUpperCase()}</div>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 15 }}>{seleccionado.nombre}</div>
-                <div style={{ fontSize: 11.5, color: '#8b8578' }}>{ROL_LABEL[seleccionado.rol]}</div>
+                <div style={{ fontWeight: 700, fontSize: 17 }}>{seleccionado.nombre}</div>
+                <div className="texto-muted">{ROL_LABEL[seleccionado.rol]}</div>
               </div>
             </div>
-            <form onSubmit={entrar} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <label style={estilos.campo}>
-                Contraseña
-                <input ref={passRef} style={estilos.input} type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(null) }} required disabled={enviando} />
-              </label>
-              {error && <div style={estilos.error}>{error}</div>}
-              <button style={estilos.boton} type="submit" disabled={enviando}>
-                {enviando ? 'Verificando…' : 'Entrar'}
-              </button>
-              <button type="button" style={estilos.enlace} onClick={() => { setPaso('forgot'); setForgotCorreo(seleccionado.correo); setError(null) }}>
+            <form onSubmit={entrar} className="form">
+              <Campo label="Contraseña">
+                <input ref={passRef} className="input" type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(null) }} required disabled={enviando} autoComplete="current-password" />
+              </Campo>
+              {error && <Alerta>{error}</Alerta>}
+              <button className="btn btn-primario" type="submit" disabled={enviando}>{enviando ? 'Verificando…' : 'Entrar'}</button>
+              <button type="button" className="btn-link" onClick={() => { setPaso('forgot'); setForgotCorreo(seleccionado.correo); setError(null) }}>
                 ¿Olvidaste tu contraseña?
               </button>
             </form>
@@ -239,31 +226,18 @@ export default function Login() {
 
         {paso === 'registro' && (
           <>
-            <button type="button" style={estilos.volver} onClick={() => { setPaso('picker'); setError(null); setAviso(null) }}>
-              ← Volver
-            </button>
-            <h1 style={estilos.titulo}>Crear cuenta</h1>
-            <form onSubmit={registrar} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <label style={estilos.campo}>
-                Nombre
-                <input style={estilos.input} value={nombre} onChange={(e) => setNombre(e.target.value)} required />
-              </label>
-              <label style={estilos.campo}>
-                Correo electrónico
-                <input style={estilos.input} type="email" value={correoRegistro} onChange={(e) => setCorreoRegistro(e.target.value)} required />
-              </label>
-              <label style={estilos.campo}>
-                Contraseña
-                <input style={estilos.input} type="password" value={passwordRegistro} onChange={(e) => setPasswordRegistro(e.target.value)} required minLength={6} />
-              </label>
-              {error && <div style={estilos.error}>{error}</div>}
-              {aviso && <div style={estilos.aviso}>{aviso}</div>}
-              <button style={estilos.boton} type="submit" disabled={enviando}>
-                {enviando ? 'Un momento…' : 'Registrarme'}
-              </button>
-              <p style={{ fontSize: 11, color: '#8b8578', lineHeight: 1.5, margin: 0 }}>
-                La primera persona que se registra en el sistema se vuelve administrador automáticamente.
-                Las siguientes entran como Gerencia; el administrador puede cambiar su rol después.
+            {volver('Volver', () => { setPaso('picker'); setError(null); setAviso(null) })}
+            <h1 style={{ fontSize: 24, marginBottom: 16 }}>Crear cuenta</h1>
+            <form onSubmit={registrar} className="form">
+              <Campo label="Nombre"><input className="input" value={nombre} onChange={(e) => setNombre(e.target.value)} required autoFocus /></Campo>
+              <Campo label="Correo electrónico"><input className="input" type="email" value={correoRegistro} onChange={(e) => setCorreoRegistro(e.target.value)} required /></Campo>
+              <Campo label="Contraseña" ayuda="Mínimo 6 caracteres">
+                <input className="input" type="password" value={passwordRegistro} onChange={(e) => setPasswordRegistro(e.target.value)} required minLength={6} autoComplete="new-password" />
+              </Campo>
+              {error && <Alerta>{error}</Alerta>}
+              <button className="btn btn-primario" type="submit" disabled={enviando}>{enviando ? 'Un momento…' : 'Registrarme'}</button>
+              <p className="texto-muted" style={{ margin: 0 }}>
+                La primera persona que se registra queda como administrador. Las siguientes entran como Gerencia y el administrador puede cambiar su rol.
               </p>
             </form>
           </>
@@ -271,39 +245,4 @@ export default function Login() {
       </div>
     </div>
   )
-}
-
-const estilos: Record<string, React.CSSProperties> = {
-  pagina: {
-    minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: '#f7f5f0', fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-  },
-  tarjeta: {
-    width: 400, background: '#fff', border: '1px solid #e4e0d8', padding: '32px 28px',
-    display: 'flex', flexDirection: 'column', gap: 4,
-  },
-  marca: {
-    font: '600 10px/1 "IBM Plex Mono", monospace', letterSpacing: '0.12em',
-    textTransform: 'uppercase', color: 'oklch(0.45 0.09 215)', marginBottom: 14,
-  },
-  titulo: { font: '400 24px/1.2 Georgia, serif', color: '#1c1b19', margin: '0 0 6px' },
-  campo: { display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: '#55524b' },
-  input: { padding: '9px 10px', border: '1px solid #ddd8d0', fontSize: 14, fontFamily: 'inherit' },
-  boton: {
-    marginTop: 2, padding: '11px', background: '#26302f', color: '#f3f1ec', border: 'none',
-    fontWeight: 600, fontSize: 13, cursor: 'pointer',
-  },
-  enlace: { background: 'none', border: 'none', color: 'oklch(0.45 0.09 215)', fontSize: 12.5, cursor: 'pointer', padding: '10px 0 0', textAlign: 'center' },
-  volver: { background: 'none', border: 'none', color: '#8b8578', fontSize: 12, cursor: 'pointer', padding: 0, textAlign: 'left', marginBottom: 18 },
-  error: { fontSize: 12.5, color: 'oklch(0.48 0.13 32)', background: 'oklch(0.97 0.025 32)', padding: '8px 10px', border: '1px solid oklch(0.5 0.11 35)' },
-  aviso: { fontSize: 12.5, color: '#22402f', background: 'oklch(0.97 0.03 150)', padding: '8px 10px', border: '1px solid oklch(0.5 0.09 150)' },
-  perfilCard: {
-    background: '#faf9f6', border: '1px solid #e4e0d8', padding: '14px 10px', cursor: 'pointer',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, fontFamily: 'inherit',
-  },
-  avatar: {
-    width: 40, height: 40, borderRadius: '50%', background: '#26302f', color: '#f3f1ec',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15,
-    font: '500 15px Georgia, serif',
-  },
 }

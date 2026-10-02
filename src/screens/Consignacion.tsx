@@ -137,9 +137,8 @@ function LoteModal({ onClose, onGuardado }: { onClose: () => void; onGuardado: (
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal titulo="Nuevo lote" onClose={onClose}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Nuevo lote</h3>
         <input required placeholder="Nombre del lote" value={nombre} onChange={(e) => setNombre(e.target.value)} style={inputStyle} />
         <input placeholder="Contacto" value={contacto} onChange={(e) => setContacto(e.target.value)} style={inputStyle} />
         <input placeholder="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} style={inputStyle} />
@@ -180,9 +179,8 @@ function ConsignacionModal({ lotes, vehiculos, onClose, onGuardado }: {
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal titulo="Enviar unidad a lote" onClose={onClose}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Enviar unidad a lote</h3>
         <select required value={vehiculoId} onChange={(e) => setVehiculoId(e.target.value)} style={inputStyle}>
           <option value="">Unidad…</option>
           {vehiculos.map((v) => <option key={v.id} value={v.id}>{v.id_interno} · {v.marca} {v.modelo} {v.anio}</option>)}

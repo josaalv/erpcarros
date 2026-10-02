@@ -1,48 +1,43 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import { useBorrador } from '../lib/useBorrador'
-import { mxn, porcentaje } from '../lib/helpers'
-import { inputStyle, th, td, btnPrimario } from '../lib/ui'
-import { Modal, FormBotones } from '../components/Ui'
-import type { Venta, VehiculoFicha, Cliente, Comisionista, CierreFinanciero, Comision } from '../types'
+import { mxn, fecha, diasEntre, etiqueta, CANAL_LABEL, FORMA_PAGO_LABEL, ESTADO_VENTA } from '../lib/helpers'
+import { PageHeader, Alerta, Cargando, EtiquetaBadge, NombreUnidad } from '../components/Ui'
+import type { Venta, Comision } from '../types'
 
-type VentaConVehiculo = Venta & { vehiculo?: { id_interno: string; marca: string; modelo: string; anio: number } | null }
-
-export const CANALES: Venta['canal'][] = ['directa', 'consignacion', 'comisionista', 'anuncio']
-const FORMAS_PAGO: Venta['forma_pago'][] = ['efectivo', 'transferencia', 'financiera', 'toma_a_cuenta', 'mixto']
+type VentaConVehiculo = Venta & {
+  vehiculo?: { id: number; id_interno: string; marca: string; modelo: string; anio: number; fecha_compra: string | null } | null
+  cliente?: { nombre: string } | null
+  comisionista?: { nombre: string } | null
+}
 
 /**
- * Cierre financiero de ventas ya registradas — solo muestra unidades que
- * YA tienen una venta en curso (cambiando su estado hacia vendido), no las
- * que están simplemente publicadas sin comprador todavía. "Registrar
- * venta" vive en "En venta" (EnVenta.tsx), junto a donde se administra el
- * resto del estado comercial de las unidades listas para vender —
- * VentaModal se exporta desde aquí para que ambas pantallas la reutilicen.
- * Cerrar financiero y generar liquidación de socios: solo admin — es el
- * paso que reparte utilidad real, mismo criterio que RN-12 con precio_minimo.
+ * Ventas registradas que aún no se cierran. Registrar venta vive en En venta;
+ * al cerrar el financiero la unidad pasa a Vendidos. El cierre se calcula en
+ * el cliente (no hay RPC todavía): si dos admins cierran la misma venta a la
+ * vez podría duplicarse — moverlo a una función security definer si pasa.
  */
 export default function Ventas() {
   const { perfil, session } = useAuth()
   const [ventas, setVentas] = useState<VentaConVehiculo[]>([])
-  const [cierres, setCierres] = useState<CierreFinanciero[]>([])
   const [comisiones, setComisiones] = useState<Comision[]>([])
   const [cargando, setCargando] = useState(true)
-  const [cerrando, setCerrando] = useState<number | null>(null)
-  const [errorCierre, setErrorCierre] = useState<string | null>(null)
+  const [ocupado, setOcupado] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
 
   const esAdmin = perfil?.rol === 'admin'
 
   async function recargar() {
     if (!supabase) return
-    const [ve, ci, co] = await Promise.all([
-      supabase.from('venta').select('*, vehiculo:vehiculo_id(id_interno, marca, modelo, anio)').order('fecha_venta', { ascending: false }),
-      supabase.from('cierre_financiero').select('*'),
+    const [ve, co] = await Promise.all([
+      supabase.from('venta')
+        .select('*, vehiculo:vehiculo_id(id, id_interno, marca, modelo, anio, fecha_compra), cliente:cliente_id(nombre), comisionista:comisionista_id(nombre)')
+        .eq('estado', 'en_proceso')
+        .order('fecha_venta', { ascending: false }),
       supabase.from('comision').select('*'),
     ])
     setVentas((ve.data ?? []) as unknown as VentaConVehiculo[])
-    setCierres((ci.data ?? []) as CierreFinanciero[])
     setComisiones((co.data ?? []) as Comision[])
     setCargando(false)
   }
@@ -51,22 +46,28 @@ export default function Ventas() {
 
   async function cerrarFinanciero(venta: VentaConVehiculo) {
     if (!supabase || !session) return
-    setErrorCierre(null)
-    setCerrando(venta.id)
+    const nombre = venta.vehiculo ? `${venta.vehiculo.marca} ${venta.vehiculo.modelo} (${venta.vehiculo.id_interno})` : 'la unidad'
+    if (!window.confirm(`¿Cerrar la venta de ${nombre} por ${mxn(venta.precio_acordado)}? Se calcula la utilidad, se reparte entre socios y la unidad pasa a Vendidos.`)) return
+    setError(null)
+    setAviso(null)
+    setOcupado(venta.id)
 
-    const [costoRes, aportRes, vehRes] = await Promise.all([
+    const [costoRes, aportRes, cierrePrevio] = await Promise.all([
       supabase.from('v_costo_vehiculo').select('costo_total').eq('vehiculo_id', venta.vehiculo_id).maybeSingle(),
       supabase.from('v_participacion_socio').select('*').eq('vehiculo_id', venta.vehiculo_id),
-      supabase.from('vehiculo').select('fecha_compra').eq('id', venta.vehiculo_id).maybeSingle(),
+      supabase.from('cierre_financiero').select('id').eq('venta_id', venta.id).maybeSingle(),
     ])
 
+    const fallar = (msg: string) => { setOcupado(null); setError(msg); recargar() }
+
+    if (costoRes.error || aportRes.error) return fallar(`No se pudieron leer los costos: ${(costoRes.error ?? aportRes.error)!.message}`)
+    if (cierrePrevio.data) return fallar('Esta venta ya tiene un cierre financiero. Recarga la página.')
+
     const costoTotal = (costoRes.data as { costo_total: number } | null)?.costo_total ?? 0
-    const fechaCompra = (vehRes.data as { fecha_compra: string | null } | null)?.fecha_compra
     const precioFinal = venta.precio_acordado
     const utilidadBruta = precioFinal - costoTotal
     const margen = precioFinal > 0 ? utilidadBruta / precioFinal : 0
     const roi = costoTotal > 0 ? utilidadBruta / costoTotal : 0
-    const diasInventario = fechaCompra ? Math.floor((new Date(venta.fecha_venta).getTime() - new Date(fechaCompra).getTime()) / 86400000) : 0
 
     const { data: cierre, error: errCierre } = await supabase.from('cierre_financiero').insert({
       vehiculo_id: venta.vehiculo_id,
@@ -76,20 +77,15 @@ export default function Ventas() {
       utilidad_bruta: utilidadBruta,
       margen,
       roi,
-      dias_inventario: diasInventario,
+      dias_inventario: diasEntre(venta.vehiculo?.fecha_compra, venta.fecha_venta),
       canal_venta: venta.canal,
       cerrado_por: session.user.id,
     }).select().single()
+    if (errCierre || !cierre) return fallar(errCierre?.message ?? 'No se pudo cerrar.')
 
-    if (errCierre || !cierre) {
-      setCerrando(null)
-      setErrorCierre(errCierre?.message ?? 'No se pudo cerrar.')
-      return
-    }
-
-    const participaciones = (aportRes.data ?? []) as { vehiculo_id: number; socio_id: number; capital_aportado: number; participacion: number }[]
+    const participaciones = (aportRes.data ?? []) as { socio_id: number; capital_aportado: number; participacion: number }[]
     if (participaciones.length > 0) {
-      await supabase.from('liquidacion').insert(participaciones.map((p) => ({
+      const { error: errLiq } = await supabase.from('liquidacion').insert(participaciones.map((p) => ({
         cierre_id: cierre.id,
         vehiculo_id: venta.vehiculo_id,
         socio_id: p.socio_id,
@@ -98,148 +94,99 @@ export default function Ventas() {
         utilidad_asignada: p.participacion * utilidadBruta,
         monto_a_pagar: p.capital_aportado + p.participacion * utilidadBruta,
       })))
+      if (errLiq) {
+        // Sin liquidación el cierre queda incompleto: se deshace (cascada) para poder reintentar.
+        await supabase.from('cierre_financiero').delete().eq('id', cierre.id)
+        return fallar(`No se pudo generar la liquidación de socios: ${errLiq.message}`)
+      }
     }
 
     if (venta.comisionista_id && !comisiones.some((c) => c.venta_id === venta.id)) {
       await supabase.from('comision').insert({ venta_id: venta.id, comisionista_id: venta.comisionista_id, esquema: 'fijo' })
     }
 
-    await supabase.from('venta').update({ estado: 'completada' }).eq('id', venta.id)
-    await supabase.from('vehiculo').update({ estado_comercial: 'vendido' }).eq('id', venta.vehiculo_id)
+    const [errVenta, errVeh] = await Promise.all([
+      supabase.from('venta').update({ estado: 'completada' }).eq('id', venta.id).then((r) => r.error),
+      supabase.from('vehiculo').update({ estado_comercial: 'vendido' }).eq('id', venta.vehiculo_id).then((r) => r.error),
+    ])
+    if (errVenta || errVeh) return fallar(`El cierre se guardó, pero no se pudo actualizar el estado: ${(errVenta ?? errVeh)!.message}`)
 
-    setCerrando(null)
+    setOcupado(null)
+    setAviso(`Venta cerrada. Utilidad: ${mxn(utilidadBruta)}. La unidad ya aparece en Vendidos.`)
     recargar()
   }
 
-  if (cargando) return <p>Cargando…</p>
+  async function cancelarVenta(venta: VentaConVehiculo) {
+    if (!supabase) return
+    if (!window.confirm('¿Cancelar esta venta? La unidad vuelve a estar disponible en En venta y se borra su comisión.')) return
+    setError(null)
+    setAviso(null)
+    setOcupado(venta.id)
+    const { error: errCom } = await supabase.from('comision').delete().eq('venta_id', venta.id)
+    const { error: errVenta } = errCom ? { error: errCom } : await supabase.from('venta').update({ estado: 'cancelada' }).eq('id', venta.id)
+    setOcupado(null)
+    if (errVenta) { setError(errVenta.message); return }
+    setAviso('Venta cancelada.')
+    recargar()
+  }
+
+  if (cargando) return <Cargando />
 
   return (
-    <div style={{ maxWidth: 960 }}>
-      <h1 style={{ font: '400 26px Georgia, serif', margin: '0 0 4px' }}>Ventas y cierre financiero</h1>
-      <p style={{ color: '#8b8578', fontSize: 12.5, marginTop: 0, marginBottom: 20 }}>
-        Unidades que ya tienen una venta en curso. Para registrar una venta nueva, ve a "En venta".
-      </p>
+    <div>
+      <PageHeader
+        titulo="Ventas por cerrar"
+        descripcion="Ventas registradas que todavía no tienen cierre financiero. Para registrar una nueva, ve a En venta."
+      />
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#fff' }}>
-        <thead>
-          <tr style={{ background: '#faf9f6' }}>{['Unidad', 'Canal', 'Precio acordado', 'Estado', esAdmin ? 'Cierre financiero' : null].filter(Boolean).map((h) => <th key={h} style={th}>{h}</th>)}</tr>
-        </thead>
-        <tbody>
-          {ventas.map((v) => {
-            const cierre = cierres.find((c) => c.venta_id === v.id)
-            return (
-              <tr key={v.id} style={{ borderTop: '1px solid #f0ede6' }}>
-                <td style={td}>
-                  <Link to={`/vehiculo/${v.vehiculo_id}`} style={{ color: '#1c1b19' }}>
-                    {v.vehiculo ? `${v.vehiculo.id_interno} · ${v.vehiculo.marca} ${v.vehiculo.modelo}` : `#${v.vehiculo_id}`}
-                  </Link>
+      {error && <div style={{ marginBottom: 16 }}><Alerta>{error}</Alerta></div>}
+      {aviso && <div style={{ marginBottom: 16 }}><Alerta tipo="ok">{aviso}</Alerta></div>}
+
+      <div className="tabla-wrap">
+        <table className="tabla">
+          <thead>
+            <tr>
+              <th>Unidad</th>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th>Canal</th>
+              <th className="num">Precio acordado</th>
+              <th>Estado</th>
+              {esAdmin && <th></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {ventas.map((v) => (
+              <tr key={v.id} className={ocupado === v.id ? 'ocupado' : ''}>
+                <td>{v.vehiculo ? <NombreUnidad v={v.vehiculo} /> : `#${v.vehiculo_id}`}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>{fecha(v.fecha_venta)}</td>
+                <td>{v.cliente?.nombre ?? <span className="texto-muted">—</span>}</td>
+                <td>
+                  {CANAL_LABEL[v.canal] ?? v.canal}
+                  {v.comisionista && <span className="unidad-folio">{v.comisionista.nombre}</span>}
                 </td>
-                <td style={td}>{v.canal}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{mxn(v.precio_acordado)}</td>
-                <td style={td}>{v.estado}</td>
+                <td className="num">
+                  {mxn(v.precio_acordado)}
+                  <span className="unidad-folio">{FORMA_PAGO_LABEL[v.forma_pago] ?? v.forma_pago}</span>
+                </td>
+                <td><EtiquetaBadge etiqueta={etiqueta(ESTADO_VENTA, v.estado)} /></td>
                 {esAdmin && (
-                  <td style={td}>
-                    {cierre ? (
-                      <span style={{ color: 'oklch(0.45 0.09 150)' }}>
-                        Cerrado · utilidad {mxn(cierre.utilidad_bruta)} · margen {porcentaje(cierre.margen)}
-                      </span>
-                    ) : v.estado === 'cancelada' ? '—' : (
-                      <button onClick={() => cerrarFinanciero(v)} disabled={cerrando === v.id} style={btnPrimario}>
-                        {cerrando === v.id ? 'Cerrando…' : 'Cerrar financiero'}
-                      </button>
-                    )}
+                  <td className="acciones-celda">
+                    <button className="btn-link peligro" onClick={() => cancelarVenta(v)} disabled={ocupado !== null}>Cancelar</button>{' '}
+                    <button className="btn btn-primario btn-chico" onClick={() => cerrarFinanciero(v)} disabled={ocupado !== null}>
+                      {ocupado === v.id ? 'Procesando…' : 'Cerrar venta'}
+                    </button>
                   </td>
                 )}
               </tr>
-            )
-          })}
-          {ventas.length === 0 && <tr><td colSpan={esAdmin ? 5 : 4} style={{ padding: 16, textAlign: 'center', color: '#8b8578' }}>Sin ventas registradas todavía.</td></tr>}
-        </tbody>
-      </table>
-      {errorCierre && <p style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)', marginTop: 8 }}>{errorCierre}</p>}
+            ))}
+            {ventas.length === 0 && <tr><td colSpan={7} className="vacio">No hay ventas pendientes de cerrar.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {!esAdmin && ventas.length > 0 && (
+        <p className="texto-muted" style={{ marginTop: 12 }}>Solo el administrador puede cerrar o cancelar una venta.</p>
+      )}
     </div>
-  )
-}
-
-export function VentaModal({ vehiculo, clientes, comisionistas, onClose, onGuardado }: {
-  vehiculo: VehiculoFicha
-  clientes: Cliente[]
-  comisionistas: Comisionista[]
-  onClose: () => void
-  onGuardado: () => void
-}) {
-  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:venta:${vehiculo.id}`, {
-    clienteId: '', comisionistaId: '', comisionMonto: '',
-    canal: 'directa' as Venta['canal'],
-    precio: vehiculo.precio_autorizado ? String(vehiculo.precio_autorizado) : '',
-    formaPago: 'transferencia' as Venta['forma_pago'],
-    fecha: new Date().toISOString().slice(0, 10),
-  })
-  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }))
-  const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!supabase) return
-    setGuardando(true)
-    setError(null)
-    const { data: venta, error: errVenta } = await supabase.from('venta').insert({
-      vehiculo_id: vehiculo.id,
-      cliente_id: form.clienteId ? Number(form.clienteId) : null,
-      comisionista_id: form.comisionistaId ? Number(form.comisionistaId) : null,
-      canal: form.canal, precio_acordado: Number(form.precio), forma_pago: form.formaPago, fecha_venta: form.fecha,
-    }).select().single()
-
-    if (errVenta || !venta) {
-      setGuardando(false)
-      setError(errVenta?.message ?? 'No se pudo registrar la venta.')
-      return
-    }
-
-    if (form.comisionistaId) {
-      await supabase.from('comision').insert({
-        venta_id: venta.id,
-        comisionista_id: Number(form.comisionistaId),
-        esquema: 'fijo',
-        monto_estimado: form.comisionMonto ? Number(form.comisionMonto) : null,
-      })
-    }
-
-    setGuardando(false)
-    limpiarBorrador()
-    onGuardado()
-  }
-
-  return (
-    <Modal onClose={onClose}>
-      <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Registrar venta</h3>
-        <p style={{ margin: 0, fontSize: 12, color: '#8b8578' }}>{vehiculo.marca} {vehiculo.modelo} {vehiculo.anio} · {vehiculo.id_interno}</p>
-
-        <select value={form.clienteId} onChange={(e) => set('clienteId', e.target.value)} style={inputStyle}>
-          <option value="">Cliente (opcional)…</option>
-          {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-        </select>
-        <select value={form.comisionistaId} onChange={(e) => set('comisionistaId', e.target.value)} style={inputStyle}>
-          <option value="">Comisionista (opcional)…</option>
-          {comisionistas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-        </select>
-        {form.comisionistaId && (
-          <input type="number" step="0.01" placeholder="Monto de comisión (opcional)" value={form.comisionMonto} onChange={(e) => set('comisionMonto', e.target.value)} style={inputStyle} />
-        )}
-        <select value={form.canal} onChange={(e) => set('canal', e.target.value as Venta['canal'])} style={inputStyle}>
-          {CANALES.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <input required type="number" step="0.01" placeholder="Precio acordado" value={form.precio} onChange={(e) => set('precio', e.target.value)} style={inputStyle} />
-        <select value={form.formaPago} onChange={(e) => set('formaPago', e.target.value as Venta['forma_pago'])} style={inputStyle}>
-          {FORMAS_PAGO.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <input required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} style={inputStyle} />
-
-        {error && <div style={{ fontSize: 11.5, color: 'oklch(0.48 0.13 32)' }}>{error}</div>}
-        <FormBotones onClose={onClose} guardando={guardando} />
-      </form>
-    </Modal>
   )
 }

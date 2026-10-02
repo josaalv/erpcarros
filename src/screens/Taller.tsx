@@ -129,9 +129,8 @@ function OrdenModal({ vehiculos, onClose, onGuardado }: {
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal titulo="Nueva orden de trabajo" onClose={onClose}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <h3 style={{ margin: 0, font: '500 16px Georgia, serif' }}>Nueva orden de trabajo</h3>
         <select required value={vehiculoId} onChange={(e) => setVehiculoId(e.target.value)} style={inputStyle}>
           <option value="">Unidad…</option>
           {vehiculos.map((v) => <option key={v.id} value={v.id}>{v.id_interno} · {v.marca} {v.modelo} {v.anio}</option>)}

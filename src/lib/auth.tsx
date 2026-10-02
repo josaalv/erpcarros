@@ -50,19 +50,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  // Depende del id y no del objeto session: Supabase entrega una sesión nueva
+  // en cada renovación de token (cada hora y al volver a la pestaña). Si se
+  // recargara el perfil ahí, cargando=true desmontaría toda la app y se
+  // perdería lo que se estaba capturando.
+  const userId = session?.user.id
   useEffect(() => {
-    if (!supabase || !session) return
+    if (!supabase || !userId) return
     setCargando(true)
     supabase
       .from('perfil')
       .select('id, nombre, rol, activo')
-      .eq('id', session.user.id)
+      .eq('id', userId)
       .maybeSingle()
       .then(({ data }) => {
         setPerfil(data as Perfil | null)
         setCargando(false)
       })
-  }, [session])
+  }, [userId])
 
   async function signIn(correo: string, password: string) {
     if (!supabase) return 'Supabase no está configurado.'
