@@ -6,7 +6,7 @@ import Panel from './screens/Panel'
 import Inventario from './screens/Inventario'
 import VehiculoNuevo from './screens/VehiculoNuevo'
 import Expediente from './screens/Expediente'
-import Usuarios from './screens/Usuarios'
+import Configuracion from './screens/Configuracion'
 import EnProceso from './screens/EnProceso'
 import EnVenta from './screens/EnVenta'
 import Vendidos from './screens/Vendidos'
@@ -74,7 +74,8 @@ function Rutas() {
         <Route path="ventas" element={<Ventas />} />
         <Route path="posibles-ofertas" element={<PosiblesOfertas />} />
         <Route path="comisionista" element={<Comisionista />} />
-        <Route path="usuarios" element={<Usuarios />} />
+        <Route path="configuracion" element={<Configuracion />} />
+        <Route path="usuarios" element={<Navigate to="/configuracion?tab=usuarios" replace />} />
         <Route path="mi-cuenta" element={<MiCuenta />} />
       </Route>
     </Routes>

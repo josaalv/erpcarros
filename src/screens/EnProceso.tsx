@@ -62,13 +62,13 @@ export default function EnProceso() {
                 <td>
                   <select className="select select-chico" value={v.estado_proceso_id} disabled={guardandoId === v.id}
                     onChange={(e) => actualizar(v.id, { estado_proceso_id: Number(e.target.value) })}>
-                    {estados.filter((e) => !e.es_final).map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+                    {estados.filter((e) => !e.es_final && (e.activo || e.id === v.estado_proceso_id)).map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
                   </select>
                 </td>
                 <td>
                   <select className="select select-chico" value={v.ubicacion_id} disabled={guardandoId === v.id}
                     onChange={(e) => actualizar(v.id, { ubicacion_id: Number(e.target.value) })}>
-                    {ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                    {ubicaciones.filter((u) => u.activo || u.id === v.ubicacion_id).map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
                   </select>
                 </td>
               </tr>

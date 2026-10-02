@@ -466,7 +466,7 @@ function GastoModal({ vehiculoId, gasto, categorias, onClose, onGuardado }: {
         <Campo label="Categoría">
           <select className="select" required value={form.categoriaId} onChange={(e) => set('categoriaId', e.target.value)}>
             <option value="">Elige una categoría…</option>
-            {categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            {categorias.filter((c) => c.activo || String(c.id) === form.categoriaId).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
         </Campo>
         <div className="form-grid">

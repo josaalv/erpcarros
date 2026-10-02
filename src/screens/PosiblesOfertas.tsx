@@ -3,12 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useCatalogos } from '../lib/catalogos'
 import { useBorrador } from '../lib/useBorrador'
+import { useParametros } from '../lib/parametros'
 import { mxn, porcentaje, fecha, km, hoyISO, numeroONull, etiqueta, RESULTADO_EVALUACION } from '../lib/helpers'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, EtiquetaBadge } from '../components/Ui'
 import type { Subasta, EvaluacionPuja, RoiSegmento } from '../types'
-
-// Comisión de subasta estándar (mismo default que compra.comision).
-const COMISION_SUBASTA = 5000
 
 /**
  * Etapa 1: unidades que todavía no son nuestras. "Adquirir" es la única
@@ -299,6 +297,7 @@ function EvaluacionModal({ subastaId, evaluacion, roiSegmento, onClose, onGuarda
   onGuardado: () => void
 }) {
   const ev = evaluacion
+  const { comision_subasta: COMISION_SUBASTA, margen_deseado: margenDefault } = useParametros()
   const [form, setForm, limpiarBorrador] = useBorrador(`borrador:evaluacion:${subastaId}:${ev?.id ?? 'nueva'}`, {
     marca: ev?.marca ?? '', modelo: ev?.modelo ?? '', anio: String(ev?.anio ?? new Date().getFullYear()),
     version: ev?.version ?? '', torre: ev?.torre ?? '',
@@ -306,7 +305,7 @@ function EvaluacionModal({ subastaId, evaluacion, roiSegmento, onClose, onGuarda
     danos: ev?.danos_observados ?? '',
     costoReparacion: ev ? String(ev.costo_reparacion_estimado) : '',
     precioMercado: ev ? String(ev.precio_venta_esperado) : '',
-    margenDeseado: ev?.margen_deseado != null ? String(Math.round(ev.margen_deseado * 1000) / 10) : '20',
+    margenDeseado: ev?.margen_deseado != null ? String(Math.round(ev.margen_deseado * 1000) / 10) : String(margenDefault),
   })
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
@@ -393,6 +392,7 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
   onClose: () => void
   onAdquirido: (vehiculoId: number) => void
 }) {
+  const { comision_subasta: COMISION_SUBASTA } = useParametros()
   const [form, setForm, limpiarBorrador] = useBorrador(`borrador:adquirir:${evaluacion.id}`, {
     idInterno: '', precio: '',
     comision: String(COMISION_SUBASTA), fechaCompra: hoyISO(),

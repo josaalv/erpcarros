@@ -141,6 +141,36 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
     columnas de una vista existente con `CREATE OR REPLACE VIEW` — las
     columnas nuevas van siempre al final del `SELECT`, nunca intercaladas.
 
+12. `014_indices_fk_faltantes.sql` — índices para 26 FKs sin índice
+    (hallazgo de `get_advisors` performance).
+13. `015_configuracion_parametros_y_borrado_maestro.sql` — tabla
+    `parametro` (empresa, comisión de subasta, margen deseado, días de
+    referido; hook `useParametros()` en `src/lib/parametros.ts`), policies
+    de DELETE que faltaban en `cliente`/`comisionista`/`lote`/`proveedor`,
+    esquema privado `respaldo` (no expuesto en la API) y las funciones
+    `respaldar_unidades()` (admin: copia las filas reales a
+    `respaldo.<tabla>_<fecha>` y anota en `respaldo.bitacora`) y
+    `listar_respaldos()`. El botón maestro (frase `BORRAR UNIDADES`) llama
+    al respaldo y, solo si sale bien, la app borra `evaluacion_puja`,
+    `subasta` y `vehiculo` con `es_demo = false` por RLS de admin (la
+    cascada hace el resto); conserva catálogos, socios, clientes,
+    comisionistas, usuarios y demo; NO borra archivos de Storage. Restaurar un respaldo es
+    manual por SQL desde esas tablas. **Ojo:** el conector MCP de Supabase
+    pide confirmación para cualquier sentencia que contenga DELETE/DROP
+    (aunque sea dentro del cuerpo de una función) y en sesiones en la nube
+    ese aviso no le llega al usuario: la llamada se vence a los 60 s sin
+    aplicar nada. Diseñar para no necesitarlas vía MCP.
+
+**Configuración** (`src/screens/Configuracion.tsx`, admin): pestañas
+General (parámetros), Catálogos (etapas, ubicaciones, categorías de gasto,
+documentos — `TablaEditable` genérico en `src/components/`), Personas y
+empresas (comisionistas con su usuario ligado, clientes, lotes,
+proveedores), Usuarios (antes pantalla propia; `/usuarios` redirige) y
+Datos y respaldos (botón maestro). Las claves `comprado`, `listo`,
+`vendido` (etapas) y `traslado` (ubicación) las usa el código: se pueden
+renombrar pero no borrar. Opciones de catálogo desactivadas dejan de
+ofrecerse en los selectores pero se conservan en registros existentes.
+
 **Datos reales cargados (es_demo=false):** 19 unidades del negocio real
 (V-1001 a V-1019) con su `compra`/`gasto` desglosado, tomadas de
 `Informacion_cuentas.xlsx` que subió el usuario. **Esto se aplicó

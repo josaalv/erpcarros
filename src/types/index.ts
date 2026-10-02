@@ -22,6 +22,7 @@ export interface EstadoProceso {
   nombre: string
   orden: number
   es_final: boolean
+  activo: boolean
 }
 
 export interface Ubicacion {
@@ -29,6 +30,7 @@ export interface Ubicacion {
   clave: string
   nombre: string
   es_externa: boolean
+  activo: boolean
 }
 
 export interface CategoriaGasto {
@@ -36,6 +38,7 @@ export interface CategoriaGasto {
   clave: string
   nombre: string
   grupo: string
+  activo: boolean
 }
 
 /** Fila de la vista v_vehiculo_ficha: los campos financieros llegan NULL
