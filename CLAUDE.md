@@ -165,6 +165,13 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
     acción al borrar: el borrado maestro elimina unidades antes que
     subastas) y `vehiculo.torre`, expuestas al final de `v_vehiculo_ficha`.
 
+15. `017_folio_automatico_vehiculo.sql` — trigger `before insert` en
+    `vehiculo`: si `id_interno` llega vacío asigna `V-####` con la
+    secuencia `folio_vehiculo_seq` (arranca en 1020; V-1001..V-1019 están
+    en el respaldo). El alta y "Adquirir" ya no piden folio. Ojo: probar el
+    trigger consume la secuencia aunque se haga rollback — regresarla con
+    `setval`.
+
 **Alta de unidad = asistente por pasos** (`src/screens/VehiculoNuevo.tsx`):
 Unidad → Subasta y compra (precio de martillo + comisión fija del
 parámetro; subasta existente o nueva) → Gastos (filas libres con total en

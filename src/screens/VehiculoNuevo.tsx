@@ -98,7 +98,7 @@ export default function VehiculoNuevo() {
 
   function validar(paso: number): string | null {
     if (paso === 0) {
-      if (!f.id_interno.trim() || !f.marca.trim() || !f.modelo.trim() || !f.anio) return 'Falta folio, marca, modelo o año.'
+      if (!f.marca.trim() || !f.modelo.trim() || !f.anio) return 'Falta marca, modelo o año.'
     }
     if (paso === 1) {
       if (f.subastaId === NUEVA && (!f.nuevaPlataforma.trim() || !f.nuevaFecha)) return 'Falta plataforma o fecha de la subasta nueva.'
@@ -151,7 +151,7 @@ export default function VehiculoNuevo() {
       : aplicables.some((t) => estadoDoc(t) !== 'faltante') ? 'en_tramite' : 'incompleto'
 
     const { data: veh, error: errVeh } = await supabase.from('vehiculo').insert({
-      id_interno: f.id_interno.trim(), vin: f.vin.trim() || null,
+      id_interno: '', vin: f.vin.trim() || null,
       marca: f.marca.trim(), modelo: f.modelo.trim(), version: f.version.trim() || null, anio: Number(f.anio),
       kilometraje: numeroONull(f.kilometraje), color: f.color.trim() || null, transmision: f.transmision,
       estado_proceso_id: (estados.find((x) => x.clave === 'comprado') ?? estados[0])?.id,
@@ -166,7 +166,7 @@ export default function VehiculoNuevo() {
     if (errVeh || !veh) {
       if (subastaCreada) await supabase.from('subasta').delete().eq('id', subastaCreada)
       setGuardando(false)
-      setError(errVeh?.message.includes('duplicate') ? `Ya existe una unidad con el folio ${f.id_interno}.` : `No se pudo guardar la unidad: ${errVeh?.message}`)
+      setError(`No se pudo guardar la unidad: ${errVeh?.message}`)
       set('paso', 0)
       return
     }
@@ -231,8 +231,10 @@ export default function VehiculoNuevo() {
           <div className="form">
             <div className="card-titulo">Datos de la unidad</div>
             <div className="form-grid">
-              <Campo label="Folio interno" ayuda="Ej. V-1020"><input className="input" value={f.id_interno} onChange={(e) => set('id_interno', e.target.value)} autoFocus /></Campo>
-              <Campo label="VIN / número de serie"><input className="input" value={f.vin} onChange={(e) => set('vin', e.target.value)} /></Campo>
+              <Campo label="Folio interno" ayuda="Se asigna solo al guardar (V-1020, V-1021…)">
+                <div className="input" style={{ background: 'var(--surface-alt)', color: 'var(--text-muted)' }}>Automático</div>
+              </Campo>
+              <Campo label="VIN / número de serie"><input className="input" value={f.vin} onChange={(e) => set('vin', e.target.value)} autoFocus /></Campo>
             </div>
             <div className="form-grid">
               <Campo label="Marca"><input className="input" value={f.marca} onChange={(e) => set('marca', e.target.value)} /></Campo>
@@ -346,7 +348,7 @@ export default function VehiculoNuevo() {
             <div className="card-titulo">Revisa antes de guardar</div>
             <div className="datos">
               <Dato label="Unidad" valor={`${f.marca} ${f.modelo} ${f.anio}`} />
-              <Dato label="Folio" valor={f.id_interno || '—'} />
+              <Dato label="Folio" valor="Se asigna al guardar" />
               {esAdmin && <Dato label="Subasta" valor={f.subastaId === NUEVA ? `${f.nuevaPlataforma} · ${fecha(f.nuevaFecha)} (nueva)` : subastaElegida ? `${subastaElegida.plataforma} · ${fecha(subastaElegida.fecha)}` : 'Sin subasta'} />}
               <Dato label="Fecha de compra" valor={fecha(f.fecha_compra)} />
             </div>

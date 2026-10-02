@@ -394,7 +394,7 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
 }) {
   const { comision_subasta: COMISION_SUBASTA } = useParametros()
   const [form, setForm, limpiarBorrador] = useBorrador(`borrador:adquirir:${evaluacion.id}`, {
-    idInterno: '', precio: '',
+    precio: '',
     comision: String(COMISION_SUBASTA), fechaCompra: hoyISO(),
   })
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
@@ -408,7 +408,7 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
     setError(null)
 
     const { data: vehiculo, error: errVehiculo } = await supabase.from('vehiculo').insert({
-      id_interno: form.idInterno.trim(),
+      id_interno: '',
       marca: evaluacion.marca, modelo: evaluacion.modelo, anio: evaluacion.anio, version: evaluacion.version,
       kilometraje: evaluacion.kilometraje_llegada,
       estado_proceso_id: estados.find((x) => x.clave === 'comprado')?.id,
@@ -418,7 +418,7 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
 
     if (errVehiculo || !vehiculo) {
       setGuardando(false)
-      setError(errVehiculo?.message.includes('duplicate') ? `Ya existe una unidad con el folio ${form.idInterno}.` : (errVehiculo?.message ?? 'No se pudo crear la unidad.'))
+      setError(errVehiculo?.message ?? 'No se pudo crear la unidad.')
       return
     }
 
@@ -447,7 +447,6 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
       onClose={onClose}
     >
       <form onSubmit={onSubmit} className="form">
-        <Campo label="Folio interno" ayuda="Ej. V-1020"><input className="input" required value={form.idInterno} onChange={(e) => set('idInterno', e.target.value)} autoFocus /></Campo>
         <div className="form-grid">
           <Campo label="Precio pagado"><input className="input" required type="number" step="0.01" min={0} value={form.precio} onChange={(e) => set('precio', e.target.value)} /></Campo>
           <Campo label="Comisión de subasta"><input className="input" required type="number" step="0.01" min={0} value={form.comision} onChange={(e) => set('comision', e.target.value)} /></Campo>
