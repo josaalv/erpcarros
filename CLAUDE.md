@@ -210,6 +210,12 @@ General); Panel e Inventario lo muestran; Inventario filtra por etapa y
 "solo atrasadas". La transmisión ya no tiene default en el alta: es
 obligatoria.
 
+**Acciones masivas** (`src/components/Masivo.tsx` + `src/lib/useSeleccion.ts`):
+En proceso y En venta tienen casillas por fila y una barra para cambiar
+etapa / ubicación / estado comercial de todas las seleccionadas en UNA
+sentencia (`update ... in (ids)`). Ambas pantallas y Vendidos tienen
+búsqueda y filtros (la selección solo cuenta filas visibles).
+
 **Detector de contrato de Prosubastas** (paso 1 del alta): el usuario sube
 el PDF "Contrato de compraventa a través de subasta" (una unidad por
 página; puede traer varias). `src/lib/contratoPdf.ts` lo lee en el

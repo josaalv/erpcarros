@@ -25,6 +25,8 @@ export default function Vendidos() {
   const [reabriendo, setReabriendo] = useState<{ v: VehiculoFicha; venta: VentaConComisionista; cierre: CierreFinanciero } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
+  const [busqueda, setBusqueda] = useState('')
+  const [periodo, setPeriodo] = useState(0)
 
   const veFinanciero = perfil?.rol === 'admin'
   const puedeEditarVenta = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
@@ -71,8 +73,13 @@ export default function Vendidos() {
   if (cargando) return <Cargando />
 
   const ventaDe = (vid: number) => ventas.find((ve) => ve.vehiculo_id === vid)
-  const totalVendido = vehiculos.reduce((acc, v) => acc + (ventaDe(v.id)?.precio_acordado ?? 0), 0)
-  const cierresDe = vehiculos.map((v) => { const ve = ventaDe(v.id); return ve ? cierres.find((c) => c.venta_id === ve.id) : undefined }).filter(Boolean) as CierreFinanciero[]
+  const q = busqueda.trim().toLowerCase()
+  const desde = periodo ? new Date(Date.now() - periodo * 86400000).toISOString().slice(0, 10) : ''
+  const filtrados = vehiculos.filter((v) =>
+    (!q || `${v.id_interno} ${v.marca} ${v.modelo} ${v.anio} ${v.vin ?? ''} ${ventaDe(v.id)?.comisionista?.nombre ?? ''}`.toLowerCase().includes(q))
+    && (!desde || (ventaDe(v.id)?.fecha_venta ?? '') >= desde))
+  const totalVendido = filtrados.reduce((acc, v) => acc + (ventaDe(v.id)?.precio_acordado ?? 0), 0)
+  const cierresDe = filtrados.map((v) => { const ve = ventaDe(v.id); return ve ? cierres.find((c) => c.venta_id === ve.id) : undefined }).filter(Boolean) as CierreFinanciero[]
   const utilidadTotal = cierresDe.reduce((acc, c) => acc + c.utilidad_bruta, 0)
 
   return (
@@ -80,13 +87,23 @@ export default function Vendidos() {
       <PageHeader titulo="Vendidos" descripcion="Unidades con el ciclo terminado. Puedes corregir fecha, canal, precio y comisión directamente en la tabla." />
 
       <div className="kpis">
-        <Kpi label="Unidades vendidas" valor={String(vehiculos.length)} />
+        <Kpi label="Unidades vendidas" valor={String(filtrados.length)} nota={filtrados.length !== vehiculos.length ? `de ${vehiculos.length} en total` : undefined} />
         <Kpi label="Total vendido" valor={mxn(totalVendido)} />
         {veFinanciero && <Kpi label="Utilidad total" valor={mxn(utilidadTotal)} />}
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alerta>{error}</Alerta></div>}
       {aviso && <div style={{ marginBottom: 16 }}><Alerta tipo="info">{aviso}</Alerta></div>}
+
+      <div className="filtros">
+        <input className="input" placeholder="Buscar por unidad, serie o comisionista…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+        <select className="select" value={periodo} onChange={(e) => setPeriodo(Number(e.target.value))}>
+          <option value={0}>Todas las fechas</option>
+          <option value={30}>Vendidas en los últimos 30 días</option>
+          <option value={90}>Últimos 3 meses</option>
+          <option value={365}>Último año</option>
+        </select>
+      </div>
 
       <div className="tabla-wrap">
         <table className="tabla">
@@ -100,7 +117,7 @@ export default function Vendidos() {
             </tr>
           </thead>
           <tbody>
-            {vehiculos.map((v) => {
+            {filtrados.map((v) => {
               const venta = ventaDe(v.id)
               const cierre = venta ? cierres.find((c) => c.venta_id === venta.id) : undefined
               const comision = venta ? comisiones.find((c) => c.venta_id === venta.id) : undefined
@@ -177,7 +194,7 @@ export default function Vendidos() {
                 </tr>
               )
             })}
-            {vehiculos.length === 0 && <tr><td colSpan={5} className="vacio">Todavía no hay unidades vendidas.</td></tr>}
+            {filtrados.length === 0 && <tr><td colSpan={5} className="vacio">{vehiculos.length ? 'Ninguna unidad coincide con los filtros.' : 'Todavía no hay unidades vendidas.'}</td></tr>}
           </tbody>
         </table>
       </div>
