@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
-import { mxn, numeroONull, ESTADO_COMERCIAL } from '../lib/helpers'
-import { PageHeader, Alerta, Cargando, NombreUnidad, Badge } from '../components/Ui'
+import { mxn, numeroONull, diasDesde, ESTADO_COMERCIAL } from '../lib/helpers'
+import { PageHeader, Alerta, Cargando, NombreUnidad, Badge, DiasBadge } from '../components/Ui'
+import { BarraMasiva } from '../components/Masivo'
+import { useSeleccion } from '../lib/useSeleccion'
 import { VentaModal } from '../components/VentaModal'
 import type { VehiculoFicha, Venta, Cliente, Comisionista } from '../types'
 
@@ -23,6 +25,10 @@ export default function EnVenta() {
   const [ventaParaRegistrar, setVentaParaRegistrar] = useState<VehiculoFicha | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
+  const [busqueda, setBusqueda] = useState('')
+  const [filtroComercial, setFiltroComercial] = useState('')
+  const [filtroUbicacion, setFiltroUbicacion] = useState('')
+  const [aplicando, setAplicando] = useState(false)
 
   const veMinimo = perfil?.rol === 'admin'
   const puedeVender = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
@@ -55,13 +61,32 @@ export default function EnVenta() {
     setGuardandoId(null)
   }
 
-  if (cargando || cargandoCatalogos) return <Cargando />
-
   const umbralListo = estados.find((e) => e.clave === 'listo')?.orden ?? 70
   const enVenta = vehiculos.filter((v) => {
     const estado = estados.find((e) => e.id === v.estado_proceso_id)
     return estado && !estado.es_final && estado.orden >= umbralListo
   })
+  const q = busqueda.trim().toLowerCase()
+  const visibles = enVenta.filter((v) =>
+    (!q || `${v.id_interno} ${v.marca} ${v.modelo} ${v.anio} ${v.vin ?? ''}`.toLowerCase().includes(q))
+    && (!filtroComercial || v.estado_comercial === filtroComercial)
+    && (!filtroUbicacion || String(v.ubicacion_id) === filtroUbicacion))
+  const sel = useSeleccion(visibles.map((v) => v.id))
+
+  async function aplicarMasivo(cambios: Record<string, unknown>) {
+    if (!supabase) return
+    setAplicando(true)
+    setError(null)
+    setAviso(null)
+    const ids = sel.seleccion
+    const { error } = await supabase.from('vehiculo').update(cambios).in('id', ids)
+    if (error) setError(`No se pudo aplicar el cambio: ${error.message}`)
+    else { setAviso(`${ids.length} unidades actualizadas.`); sel.limpiar() }
+    await recargar()
+    setAplicando(false)
+  }
+
+  if (cargando || cargandoCatalogos) return <Cargando />
   const ventaEnCurso = (vid: number) => ventas.some((ve) => ve.vehiculo_id === vid && ve.estado === 'en_proceso')
 
   return (
@@ -74,10 +99,36 @@ export default function EnVenta() {
       {error && <div style={{ marginBottom: 16 }}><Alerta>{error}</Alerta></div>}
       {aviso && <div style={{ marginBottom: 16 }}><Alerta tipo="ok">{aviso}</Alerta></div>}
 
+      <div className="filtros">
+        <input className="input" placeholder="Buscar por marca, modelo, folio o serie…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+        <select className="select" value={filtroComercial} onChange={(e) => setFiltroComercial(e.target.value)}>
+          <option value="">Todos los estados</option>
+          {COMERCIAL_EDITABLES.map((o) => <option key={o} value={o}>{ESTADO_COMERCIAL[o].label}</option>)}
+        </select>
+        <select className="select" value={filtroUbicacion} onChange={(e) => setFiltroUbicacion(e.target.value)}>
+          <option value="">Todas las ubicaciones</option>
+          {ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+        </select>
+        {visibles.length !== enVenta.length && <span className="texto-suave filtros-cuenta">{visibles.length} de {enVenta.length}</span>}
+      </div>
+
+      <BarraMasiva
+        cantidad={sel.seleccion.length}
+        ocupado={aplicando}
+        onLimpiar={sel.limpiar}
+        onAplicar={aplicarMasivo}
+        campos={[
+          { clave: 'estado_comercial', label: 'Estado', opciones: COMERCIAL_EDITABLES.map((o) => ({ valor: o, label: ESTADO_COMERCIAL[o].label })) },
+          { clave: 'ubicacion_id', label: 'Ubicación', convertir: Number, opciones: ubicaciones.filter((u) => u.activo).map((u) => ({ valor: String(u.id), label: u.nombre })) },
+          { clave: 'estado_proceso_id', label: 'Etapa', convertir: Number, opciones: estados.filter((e) => !e.es_final && e.activo).map((e) => ({ valor: String(e.id), label: e.nombre })) },
+        ]}
+      />
+
       <div className="tabla-wrap">
         <table className="tabla">
           <thead>
             <tr>
+              <th className="col-check"><input type="checkbox" aria-label="Seleccionar todas" checked={sel.todos} onChange={sel.alternarTodos} /></th>
               <th>Unidad</th>
               <th>Etapa</th>
               <th>Estado comercial</th>
@@ -87,12 +138,16 @@ export default function EnVenta() {
             </tr>
           </thead>
           <tbody>
-            {enVenta.map((v) => {
+            {visibles.map((v) => {
               const enCurso = ventaEnCurso(v.id)
               const ocupado = guardandoId === v.id
               return (
                 <tr key={v.id} className={ocupado ? 'ocupado' : ''}>
-                  <td><NombreUnidad v={v} /></td>
+                  <td className="col-check"><input type="checkbox" aria-label={`Seleccionar ${v.id_interno}`} checked={sel.marcado(v.id)} onChange={() => sel.alternar(v.id)} /></td>
+                  <td>
+                    <NombreUnidad v={v} />
+                    <DiasBadge dias={diasDesde(v.fecha_compra)} />
+                  </td>
                   <td>
                     <select className="select select-chico" value={v.estado_proceso_id} disabled={ocupado}
                       title="Si la regresas a una etapa anterior, vuelve a En proceso"
@@ -137,7 +192,7 @@ export default function EnVenta() {
                 </tr>
               )
             })}
-            {enVenta.length === 0 && <tr><td colSpan={7} className="vacio">No hay unidades listas para vender.</td></tr>}
+            {visibles.length === 0 && <tr><td colSpan={7} className="vacio">{enVenta.length ? 'Ninguna unidad coincide con los filtros.' : 'No hay unidades listas para vender.'}</td></tr>}
           </tbody>
         </table>
       </div>

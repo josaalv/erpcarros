@@ -262,3 +262,14 @@ details.plegable summary { cursor: pointer; color: var(--text-soft); font-weight
 .texto-ok { color: var(--success); font-weight: 600; }
 .texto-peligro { color: var(--danger); font-weight: 600; }
 .filtros .check, .filtros-cuenta { align-self: center; }
+
+/* Barra de acciones masivas (aparece al seleccionar filas) */
+.barra-masiva {
+  position: sticky; top: 8px; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 14px; margin-bottom: 12px;
+  background: var(--primary-soft); border: 1px solid var(--primary); border-radius: 10px;
+}
+.barra-masiva .select { width: auto; }
+.col-check { width: 36px; }
+.col-check input { width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer; }
