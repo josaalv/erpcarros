@@ -414,7 +414,7 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
       estado_proceso_id: estados.find((x) => x.clave === 'comprado')?.id,
       ubicacion_id: ubicaciones.find((u) => u.clave === 'traslado')?.id,
       fecha_compra: form.fechaCompra, precio_autorizado: evaluacion.precio_venta_esperado,
-    }).select().single()
+    }).select('id').single()
 
     if (errVehiculo || !vehiculo) {
       setGuardando(false)

@@ -216,6 +216,22 @@ etapa / ubicación / estado comercial de todas las seleccionadas en UNA
 sentencia (`update ... in (ids)`). Ambas pantallas y Vendidos tienen
 búsqueda y filtros (la selección solo cuenta filas visibles).
 
+19. `021_cerrar_lectura_precio_minimo.sql` — las pruebas de RLS
+    (`supabase/tests/rls_por_rol.sql`) encontraron que gerencia y
+    comisionistas podían leer `precio_minimo` directo de la tabla `vehiculo`
+    (la vista lo redactaba, la tabla no). Ahora `authenticated` tiene SELECT
+    **por columna** en `vehiculo`, en todas menos `precio_minimo`, y la
+    vista (security_invoker) lo obtiene con `precio_minimo_de(id)` (security
+    definer, solo responde al admin). **Al agregar una columna a `vehiculo`
+    hay que darle `grant select (columna) on public.vehiculo to
+    authenticated;`** o nadie la podrá leer, y nunca usar `select *` sobre
+    `vehiculo` (ni en el cliente ni en funciones invoker).
+
+**Pruebas de permisos**: `supabase/tests/rls_por_rol.sql` corre en una
+transacción con rollback y revisa gerencia, comisionista, demo, anónimo y
+admin (control). Correrlo (MCP `execute_sql` o SQL Editor) después de
+cualquier cambio de esquema o de policies; debe devolver `OK`.
+
 **Detector de contrato de Prosubastas** (paso 1 del alta): el usuario sube
 el PDF "Contrato de compraventa a través de subasta" (una unidad por
 página; puede traer varias). `src/lib/contratoPdf.ts` lo lee en el
@@ -490,10 +506,8 @@ nunca el vehículo real.
   objetivo) porque `docs/analisis-fuente/` con la fórmula original ya no
   está en el repo. Si el usuario da la fórmula exacta de RN-05, ajustar
   `src/screens/Calculadora.tsx`.
-- Sin pruebas automatizadas todavía (el diseño Laravel sí las tenía —
-  `AutorizacionPermisosTest`/`CalculoFinancieroTest` — pero se
-  descartaron con el resto del código PHP). Replicar el mismo espíritu
-  con Postgres: pruebas negativas de RLS por rol.
+- Pruebas: solo las de RLS por rol (`supabase/tests/rls_por_rol.sql`); no
+  hay pruebas de la interfaz.
 - El workflow de deploy no corre migraciones de Supabase — esas se
   aplican a mano vía MCP, igual que en `robsen-salon`.
 - **Taller y Consignación están desactivadas a propósito** (quitadas de
