@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import { mxn, fecha, diasEntre, etiqueta, CANAL_LABEL, FORMA_PAGO_LABEL, ESTADO_VENTA } from '../lib/helpers'
+import { mxn, fecha, etiqueta, CANAL_LABEL, FORMA_PAGO_LABEL, ESTADO_VENTA } from '../lib/helpers'
 import { PageHeader, Alerta, Cargando, EtiquetaBadge, NombreUnidad } from '../components/Ui'
-import type { Venta, Comision } from '../types'
+import type { Venta } from '../types'
 
 type VentaConVehiculo = Venta & {
   vehiculo?: { id: number; id_interno: string; marca: string; modelo: string; anio: number; fecha_compra: string | null } | null
@@ -13,14 +13,12 @@ type VentaConVehiculo = Venta & {
 
 /**
  * Ventas registradas que aún no se cierran. Registrar venta vive en En venta;
- * al cerrar el financiero la unidad pasa a Vendidos. El cierre se calcula en
- * el cliente (no hay RPC todavía): si dos admins cierran la misma venta a la
- * vez podría duplicarse — moverlo a una función security definer si pasa.
+ * al cerrar el financiero la unidad pasa a Vendidos. El cálculo vive en la
+ * función cerrar_financiero (migración 019).
  */
 export default function Ventas() {
-  const { perfil, session } = useAuth()
+  const { perfil } = useAuth()
   const [ventas, setVentas] = useState<VentaConVehiculo[]>([])
-  const [comisiones, setComisiones] = useState<Comision[]>([])
   const [cargando, setCargando] = useState(true)
   const [ocupado, setOcupado] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -30,89 +28,29 @@ export default function Ventas() {
 
   async function recargar() {
     if (!supabase) return
-    const [ve, co] = await Promise.all([
-      supabase.from('venta')
-        .select('*, vehiculo:vehiculo_id(id, id_interno, marca, modelo, anio, fecha_compra), cliente:cliente_id(nombre), comisionista:comisionista_id(nombre)')
-        .eq('estado', 'en_proceso')
-        .order('fecha_venta', { ascending: false }),
-      supabase.from('comision').select('*'),
-    ])
+    const ve = await supabase.from('venta')
+      .select('*, vehiculo:vehiculo_id(id, id_interno, marca, modelo, anio, fecha_compra), cliente:cliente_id(nombre), comisionista:comisionista_id(nombre)')
+      .eq('estado', 'en_proceso')
+      .order('fecha_venta', { ascending: false })
     setVentas((ve.data ?? []) as unknown as VentaConVehiculo[])
-    setComisiones((co.data ?? []) as Comision[])
     setCargando(false)
   }
 
   useEffect(() => { recargar() }, [])
 
   async function cerrarFinanciero(venta: VentaConVehiculo) {
-    if (!supabase || !session) return
+    if (!supabase) return
     const nombre = venta.vehiculo ? `${venta.vehiculo.marca} ${venta.vehiculo.modelo} (${venta.vehiculo.id_interno})` : 'la unidad'
     if (!window.confirm(`¿Cerrar la venta de ${nombre} por ${mxn(venta.precio_acordado)}? Se calcula la utilidad, se reparte entre socios y la unidad pasa a Vendidos.`)) return
     setError(null)
     setAviso(null)
     setOcupado(venta.id)
-
-    const [costoRes, aportRes, cierrePrevio] = await Promise.all([
-      supabase.from('v_costo_vehiculo').select('costo_total').eq('vehiculo_id', venta.vehiculo_id).maybeSingle(),
-      supabase.from('v_participacion_socio').select('*').eq('vehiculo_id', venta.vehiculo_id),
-      supabase.from('cierre_financiero').select('id').eq('venta_id', venta.id).maybeSingle(),
-    ])
-
-    const fallar = (msg: string) => { setOcupado(null); setError(msg); recargar() }
-
-    if (costoRes.error || aportRes.error) return fallar(`No se pudieron leer los costos: ${(costoRes.error ?? aportRes.error)!.message}`)
-    if (cierrePrevio.data) return fallar('Esta venta ya tiene un cierre financiero. Recarga la página.')
-
-    const costoTotal = (costoRes.data as { costo_total: number } | null)?.costo_total ?? 0
-    const precioFinal = venta.precio_acordado
-    const utilidadBruta = precioFinal - costoTotal
-    const margen = precioFinal > 0 ? utilidadBruta / precioFinal : 0
-    const roi = costoTotal > 0 ? utilidadBruta / costoTotal : 0
-
-    const { data: cierre, error: errCierre } = await supabase.from('cierre_financiero').insert({
-      vehiculo_id: venta.vehiculo_id,
-      venta_id: venta.id,
-      costo_total: costoTotal,
-      precio_final: precioFinal,
-      utilidad_bruta: utilidadBruta,
-      margen,
-      roi,
-      dias_inventario: diasEntre(venta.vehiculo?.fecha_compra, venta.fecha_venta),
-      canal_venta: venta.canal,
-      cerrado_por: session.user.id,
-    }).select().single()
-    if (errCierre || !cierre) return fallar(errCierre?.message ?? 'No se pudo cerrar.')
-
-    const participaciones = (aportRes.data ?? []) as { socio_id: number; capital_aportado: number; participacion: number }[]
-    if (participaciones.length > 0) {
-      const { error: errLiq } = await supabase.from('liquidacion').insert(participaciones.map((p) => ({
-        cierre_id: cierre.id,
-        vehiculo_id: venta.vehiculo_id,
-        socio_id: p.socio_id,
-        capital_aportado: p.capital_aportado,
-        participacion: p.participacion,
-        utilidad_asignada: p.participacion * utilidadBruta,
-        monto_a_pagar: p.capital_aportado + p.participacion * utilidadBruta,
-      })))
-      if (errLiq) {
-        // Sin liquidación el cierre queda incompleto: se deshace (cascada) para poder reintentar.
-        await supabase.from('cierre_financiero').delete().eq('id', cierre.id)
-        return fallar(`No se pudo generar la liquidación de socios: ${errLiq.message}`)
-      }
-    }
-
-    if (venta.comisionista_id && !comisiones.some((c) => c.venta_id === venta.id)) {
-      await supabase.from('comision').insert({ venta_id: venta.id, comisionista_id: venta.comisionista_id, esquema: 'fijo' })
-    }
-
-    const [errVenta, errVeh] = await Promise.all([
-      supabase.from('venta').update({ estado: 'completada' }).eq('id', venta.id).then((r) => r.error),
-      supabase.from('vehiculo').update({ estado_comercial: 'vendido' }).eq('id', venta.vehiculo_id).then((r) => r.error),
-    ])
-    if (errVenta || errVeh) return fallar(`El cierre se guardó, pero no se pudo actualizar el estado: ${(errVenta ?? errVeh)!.message}`)
-
+    // Todo el cierre (cierre, liquidación por socio, comisión, estados) es una
+    // sola transacción en la base: o se guarda completo o no se guarda nada.
+    const { data, error: err } = await supabase.rpc('cerrar_financiero', { p_venta_id: venta.id })
     setOcupado(null)
-    setAviso(`Venta cerrada. Utilidad: ${mxn(utilidadBruta)}. La unidad ya aparece en Vendidos.`)
+    if (err) { setError(err.message); recargar(); return }
+    setAviso(`Venta cerrada. Utilidad: ${mxn((data as { utilidad: number }).utilidad)}. La unidad ya aparece en Vendidos.`)
     recargar()
   }
 

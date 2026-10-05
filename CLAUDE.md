@@ -2,7 +2,10 @@
 
 ERP para un negocio de compra, reparación y venta de vehículos (arbitraje
 de activos con valor agregado: subasta → taller → venta, ciclo ~30 días,
-12 unidades activas, 6 usuarios). Este archivo es memoria persistente: se
+6 usuarios). **El volumen fluctúa mucho** (una subasta puede meter muchas
+unidades de golpe y luego cerrarse varias ventas en pocos días) — no
+diseñar asumiendo ~12 unidades: listas con filtro/búsqueda, acciones
+masivas y operaciones atómicas en la base. Este archivo es memoria persistente: se
 lee automáticamente al abrir el repo.
 
 ## ⚠️ Historial de arquitectura — leer antes de asumir nada
@@ -176,6 +179,15 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
     `stock_subasta`, `notas` (+ índice en `vin`), al final de
     `v_vehiculo_ficha`.
 
+17. `019_cierre_financiero_en_base.sql` — funciones `cerrar_financiero(venta)`
+    y `recalcular_cierre(venta, motivo)` (`security invoker`: aplican las
+    mismas RLS). Cada una es UNA transacción: cierre + liquidación por socio
+    + comisión + estados, o nada; `for update` sobre la venta evita cierres
+    dobles. El recálculo actualiza la liquidación en su lugar (`on conflict`)
+    y conserva `pagado`/`fecha_pago`; un socio que ya no aporta queda en 0
+    (no se borra: el MCP no aplica SQL con borrados). Heredan `es_demo` de la
+    unidad y `dias_inventario` = 0 si no hay fecha de compra.
+
 **Detector de contrato de Prosubastas** (paso 1 del alta): el usuario sube
 el PDF "Contrato de compraventa a través de subasta" (una unidad por
 página; puede traer varias). `src/lib/contratoPdf.ts` lo lee en el
@@ -309,8 +321,8 @@ El flujo que el dueño describió y que ya está construido de punta a punta:
    cierre"** (admin) usa la tabla `reapertura` — ya existía en el esquema
    desde la migración 005 pero nunca se había usado desde el frontend —
    para dejar constancia del motivo y luego **actualiza el mismo
-   `cierre_financiero` en su lugar** (`estado: 'reabierto'`, borra y
-   regenera sus `liquidacion`). No borrarlo: el FK
+   `cierre_financiero` en su lugar** (`estado: 'reabierto'`, actualiza sus
+   `liquidacion` sin perder lo ya pagado — función `recalcular_cierre`). No borrarlo: el FK
    `reapertura.cierre_id` es `ON DELETE CASCADE` (migración 011), así que
    borrar el cierre borraba también el motivo recién guardado — así
    estaba antes de octubre 2026 y la constancia nunca quedaba.
@@ -443,14 +455,8 @@ nunca el vehículo real.
   El Expediente de cada unidad ya NO edita `estado_proceso`/`ubicación`
   (`EstadoEditor` solo toca `estado_comercial`/`estado_documental`) —
   evita tener el mismo campo editable en dos lugares sin sincronía.
-- La lógica de cierre financiero y reparto de utilidad vive en el cliente
-  (`src/screens/Ventas.tsx`, función `cerrarFinanciero`) porque no hay
-  funciones/RPC de Postgres para eso todavía — está protegida solo por
-  ser una pantalla admin-only + RLS de las tablas que toca (`venta`,
-  `cierre_financiero`, `liquidacion`, `comision`), no por lógica en la
-  base. Si se detecta que dos admins pueden cerrar la misma unidad dos
-  veces (race condition), mover esto a una función `security definer` en
-  Postgres.
+- El cierre financiero y su recálculo viven en la base (migración 019):
+  `Ventas.tsx` y `Vendidos.tsx` solo llaman `supabase.rpc(...)`.
 - La calculadora de puja usa una fórmula propia razonable (techo = precio
   esperado − costo de reparación − comisión de subasta − utilidad
   objetivo) porque `docs/analisis-fuente/` con la fórmula original ya no
