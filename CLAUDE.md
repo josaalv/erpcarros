@@ -194,7 +194,8 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
     aportacion, venta, comision, cierre_financiero, liquidacion y socio: en
     cambios guarda solo `{campo: [antes, después]}`. **Las bajas van en
     `020b_bitacora_bajas.sql`, que se pega a mano en el SQL Editor** (el MCP
-    no aplica sentencias con la palabra de borrado). Además `gasto.proveedor_id`
+    no aplica sentencias con la palabra de borrado) — ya aplicado por el
+    usuario en octubre 2026 (9 triggers `bitacora_baja_*`). Además `gasto.proveedor_id`
     y `gasto.comprobante_path` (Storage `documentos-vehiculo/<veh>/gastos/`).
     UI: pestaña Historial en el Expediente y en Configuración
     (`src/components/Bitacora.tsx`); comprobante y proveedor en `GastoModal`;
@@ -571,6 +572,11 @@ nunca el vehículo real.
   manualmente — ahora se ve y se edita directo en la ficha del vehículo,
   con el % de participación calculado ahí mismo, para que quede explícito
   de quién es el capital de cada unidad y no se mezcle entre socios.
+
+- **Protección contra contraseñas filtradas (HaveIBeenPwned)**: el aviso de
+  `get_advisors` sigue saliendo, pero esa opción de Supabase Auth solo
+  existe en el plan Pro y el proyecto está en el gratuito. Ignorar el aviso
+  salvo que se cambie de plan.
 
 ## Convenciones de este proyecto
 
