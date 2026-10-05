@@ -5,10 +5,15 @@ export type { UnidadContrato }
 interface ItemTexto { str: string; hasEOL?: boolean }
 
 /** Lee un PDF de contratos (una unidad por página). Las librerías se cargan solo al usarse. */
-export async function leerContratos(archivo: File): Promise<UnidadContrato[]> {
-  const pdfjs = await import('pdfjs-dist')
-  const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+export async function cargarPdfjs() {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const worker = await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default
+  return pdfjs
+}
+
+export async function leerContratos(archivo: File): Promise<UnidadContrato[]> {
+  const pdfjs = await cargarPdfjs()
 
   const doc = await pdfjs.getDocument({ data: new Uint8Array(await archivo.arrayBuffer()) }).promise
   const unidades: UnidadContrato[] = []

@@ -30,6 +30,7 @@ export default function Expediente() {
   const [socios, setSocios] = useState<Socio[]>([])
   const [cargando, setCargando] = useState(true)
   const [subasta, setSubasta] = useState<{ plataforma: string; fecha: string; lote: string | null } | null>(null)
+  const [editandoDatos, setEditandoDatos] = useState(false)
 
   const esAdmin = perfil?.rol === 'admin'
   const esAdminOGerencia = esAdmin || perfil?.rol === 'gerencia'
@@ -112,6 +113,12 @@ export default function Expediente() {
       {pestana === 'resumen' && (
         <>
           <div className="card">
+            <div className="card-encabezado-acciones">
+              <div className="card-titulo">Datos de la unidad</div>
+              {esAdminOGerencia && (
+                <button className="btn btn-secundario btn-chico" onClick={() => setEditandoDatos(true)}>Editar datos</button>
+              )}
+            </div>
             <div className="datos">
               <Dato label="Kilometraje de llegada" valor={km(veh.kilometraje)} />
               <Dato label="Kilometraje final" valor={km(veh.kilometraje_final)} />
@@ -154,6 +161,11 @@ export default function Expediente() {
             )}
           </div>
 
+          {editandoDatos && (
+            <EditarDatosModal veh={veh} esAdmin={esAdmin} onClose={() => setEditandoDatos(false)}
+              onGuardado={() => { setEditandoDatos(false); recargar() }} />
+          )}
+
           {esAdminOGerencia && <EstadoEditor key={veh.id} veh={veh} onGuardado={recargar} />}
 
           {esAdmin && (
@@ -190,6 +202,98 @@ export default function Expediente() {
         <CapitalSocios vehiculoId={veh.id} aportaciones={aportaciones} socios={socios} onCambio={recargar} />
       )}
     </div>
+  )
+}
+
+/* ── Resumen: corregir los datos capturados en el alta ─────────────── */
+
+interface SubastaOpcion { id: number; plataforma: string; fecha: string; lote: string | null }
+
+function EditarDatosModal({ veh, esAdmin, onClose, onGuardado }: {
+  veh: VehiculoFicha; esAdmin: boolean; onClose: () => void; onGuardado: () => void
+}) {
+  const texto = (v: string | number | null) => (v === null || v === undefined ? '' : String(v))
+  const [f, setF] = useState({
+    marca: veh.marca, modelo: veh.modelo, version: texto(veh.version), anio: texto(veh.anio),
+    vin: texto(veh.vin), kilometraje: texto(veh.kilometraje), color: texto(veh.color),
+    transmision: veh.transmision ?? '', numero_motor: texto(veh.numero_motor), torre: texto(veh.torre),
+    stock_subasta: texto(veh.stock_subasta), fecha_compra: texto(veh.fecha_compra),
+    subasta_id: texto(veh.subasta_id), notas: texto(veh.notas),
+  })
+  const [subastas, setSubastas] = useState<SubastaOpcion[]>([])
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }))
+
+  // subasta es solo admin por RLS; gerencia no la ve ni la cambia.
+  useEffect(() => {
+    if (!supabase || !esAdmin) return
+    supabase.from('subasta').select('id, plataforma, fecha, lote').order('fecha', { ascending: false })
+      .then(({ data }) => setSubastas((data ?? []) as SubastaOpcion[]))
+  }, [esAdmin])
+
+  async function guardar(e: FormEvent) {
+    e.preventDefault()
+    if (!supabase) return
+    if (!f.marca.trim() || !f.modelo.trim()) { setError('Marca y modelo son obligatorios.'); return }
+    const anio = Number(f.anio)
+    if (!Number.isInteger(anio) || anio < 1950 || anio > 2100) { setError('Revisa el año.'); return }
+    setGuardando(true)
+    setError(null)
+    const nulo = (v: string) => v.trim() || null
+    const cambios: Record<string, unknown> = {
+      marca: f.marca.trim(), modelo: f.modelo.trim(), version: nulo(f.version), anio,
+      vin: f.vin.trim() ? f.vin.replace(/\s+/g, '').toUpperCase() : null,
+      kilometraje: numeroONull(f.kilometraje), color: nulo(f.color), transmision: f.transmision || null,
+      numero_motor: nulo(f.numero_motor), torre: nulo(f.torre), stock_subasta: nulo(f.stock_subasta),
+      fecha_compra: f.fecha_compra || null, notas: nulo(f.notas),
+    }
+    if (esAdmin) cambios.subasta_id = f.subasta_id ? Number(f.subasta_id) : null
+    const { error } = await supabase.from('vehiculo').update(cambios).eq('id', veh.id)
+    setGuardando(false)
+    if (error) { setError(error.code === '23505' ? 'Ya existe otra unidad con ese número de serie.' : error.message); return }
+    onGuardado()
+  }
+
+  return (
+    <Modal titulo="Editar datos de la unidad" subtitulo={veh.id_interno} ancho={720} onClose={onClose}>
+      <form onSubmit={guardar}>
+        <div className="form-grid">
+          <Campo label="Marca"><input className="input" value={f.marca} onChange={(e) => set('marca', e.target.value)} /></Campo>
+          <Campo label="Modelo"><input className="input" value={f.modelo} onChange={(e) => set('modelo', e.target.value)} /></Campo>
+          <Campo label="Versión"><input className="input" value={f.version} onChange={(e) => set('version', e.target.value)} /></Campo>
+          <Campo label="Año"><input className="input" type="number" value={f.anio} onChange={(e) => set('anio', e.target.value)} /></Campo>
+          <Campo label="Número de serie (VIN)"><input className="input" value={f.vin} onChange={(e) => set('vin', e.target.value)} /></Campo>
+          <Campo label="Número de motor"><input className="input" value={f.numero_motor} onChange={(e) => set('numero_motor', e.target.value)} /></Campo>
+          <Campo label="Kilometraje de llegada"><input className="input" type="number" min={0} value={f.kilometraje} onChange={(e) => set('kilometraje', e.target.value)} /></Campo>
+          <Campo label="Color"><input className="input" value={f.color} onChange={(e) => set('color', e.target.value)} /></Campo>
+          <Campo label="Transmisión">
+            <select className="select" value={f.transmision} onChange={(e) => set('transmision', e.target.value)}>
+              <option value="">Sin capturar</option>
+              {Object.entries(TRANSMISION_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Fecha de compra"><input className="input" type="date" value={f.fecha_compra} onChange={(e) => set('fecha_compra', e.target.value)} /></Campo>
+          {esAdmin && (
+            <Campo label="Subasta">
+              <select className="select" value={f.subasta_id} onChange={(e) => set('subasta_id', e.target.value)}>
+                <option value="">Sin subasta</option>
+                {subastas.map((s) => (
+                  <option key={s.id} value={s.id}>{s.plataforma} · {fecha(s.fecha)}{s.lote ? ` · ${s.lote}` : ''}</option>
+                ))}
+              </select>
+            </Campo>
+          )}
+          <Campo label="Torre"><input className="input" value={f.torre} onChange={(e) => set('torre', e.target.value)} /></Campo>
+          <Campo label="Stock (subasta)"><input className="input" value={f.stock_subasta} onChange={(e) => set('stock_subasta', e.target.value)} /></Campo>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Campo label="Notas"><textarea className="input" rows={3} value={f.notas} onChange={(e) => set('notas', e.target.value)} /></Campo>
+        </div>
+        {error && <div style={{ marginTop: 12 }}><Alerta>{error}</Alerta></div>}
+        <FormBotones onClose={onClose} guardando={guardando} />
+      </form>
+    </Modal>
   )
 }
 
