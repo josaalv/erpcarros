@@ -225,7 +225,7 @@ function EditarDatosModal({ veh, esAdmin, onClose, onGuardado }: {
     vin: texto(veh.vin), kilometraje: texto(veh.kilometraje), color: texto(veh.color),
     transmision: veh.transmision ?? '', numero_motor: texto(veh.numero_motor), torre: texto(veh.torre),
     stock_subasta: texto(veh.stock_subasta), fecha_compra: texto(veh.fecha_compra),
-    subasta_id: texto(veh.subasta_id), notas: texto(veh.notas),
+    subasta_id: texto(veh.subasta_id), notas: texto(veh.notas), precio_minimo: texto(veh.precio_minimo),
   })
   const [subastas, setSubastas] = useState<SubastaOpcion[]>([])
   const [guardando, setGuardando] = useState(false)
@@ -255,7 +255,10 @@ function EditarDatosModal({ veh, esAdmin, onClose, onGuardado }: {
       numero_motor: nulo(f.numero_motor), torre: nulo(f.torre), stock_subasta: nulo(f.stock_subasta),
       fecha_compra: f.fecha_compra || null, notas: nulo(f.notas),
     }
-    if (esAdmin) cambios.subasta_id = f.subasta_id ? Number(f.subasta_id) : null
+    if (esAdmin) {
+      cambios.subasta_id = f.subasta_id ? Number(f.subasta_id) : null
+      cambios.precio_minimo = numeroONull(f.precio_minimo)
+    }
     const { error } = await supabase.from('vehiculo').update(cambios).eq('id', veh.id)
     setGuardando(false)
     if (error) { setError(error.code === '23505' ? 'Ya existe otra unidad con ese número de serie.' : error.message); return }
@@ -289,6 +292,11 @@ function EditarDatosModal({ veh, esAdmin, onClose, onGuardado }: {
                   <option key={s.id} value={s.id}>{s.plataforma} · {fecha(s.fecha)}{s.lote ? ` · ${s.lote}` : ''}</option>
                 ))}
               </select>
+            </Campo>
+          )}
+          {esAdmin && (
+            <Campo label="Precio mínimo" ayuda="Solo lo ve el administrador">
+              <input className="input" type="number" min={0} value={f.precio_minimo} onChange={(e) => set('precio_minimo', e.target.value)} />
             </Campo>
           )}
           <Campo label="Torre"><input className="input" value={f.torre} onChange={(e) => set('torre', e.target.value)} /></Campo>
