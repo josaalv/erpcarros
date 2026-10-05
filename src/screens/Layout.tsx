@@ -28,10 +28,17 @@ const GRUPOS: GrupoNav[] = [
     ],
   },
   {
-    titulo: 'Administración',
+    titulo: 'Dinero',
     items: [
+      { to: '/por-cobrar', label: 'Por cobrar', roles: ADMIN_GERENCIA },
+      { to: '/por-pagar', label: 'Por pagar', roles: ADMIN },
       { to: '/resultados', label: 'Resultados', roles: ADMIN },
       { to: '/socios', label: 'Socios', roles: ADMIN },
+    ],
+  },
+  {
+    titulo: 'Administración',
+    items: [
       { to: '/configuracion', label: 'Configuración', roles: ADMIN },
     ],
   },

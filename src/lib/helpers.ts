@@ -117,6 +117,12 @@ export const ESQUEMA_COMISION_LABEL: Record<string, string> = {
   especial: 'Especial',
 }
 
+export const ORIGEN_COBRO_LABEL: Record<string, string> = {
+  cliente: 'Cliente',
+  financiera: 'Financiera',
+  otro: 'Otro',
+}
+
 export const TRANSMISION_LABEL: Record<string, string> = {
   manual: 'Manual (estándar)',
   automatica: 'Automática',

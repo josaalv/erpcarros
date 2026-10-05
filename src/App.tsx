@@ -12,6 +12,8 @@ import EnVenta from './screens/EnVenta'
 import Vendidos from './screens/Vendidos'
 import Socios from './screens/Socios'
 import Resultados from './screens/Resultados'
+import PorCobrar from './screens/PorCobrar'
+import PorPagar from './screens/PorPagar'
 // Taller y Consignación desactivadas (ver Layout.tsx) — los archivos
 // siguen en src/screens/, solo se quitó la ruta y el import.
 import Comisionista from './screens/Comisionista'
@@ -73,6 +75,8 @@ function Rutas() {
         <Route path="vendidos" element={<Vendidos />} />
         <Route path="socios" element={<Socios />} />
         <Route path="resultados" element={<Resultados />} />
+        <Route path="por-cobrar" element={<PorCobrar />} />
+        <Route path="por-pagar" element={<PorPagar />} />
         <Route path="ventas" element={<Ventas />} />
         <Route path="posibles-ofertas" element={<PosiblesOfertas />} />
         <Route path="comisionista" element={<Comisionista />} />

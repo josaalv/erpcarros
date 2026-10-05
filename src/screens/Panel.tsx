@@ -16,6 +16,8 @@ export default function Panel() {
   const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [porCobrar, setPorCobrar] = useState<number | null>(null)
+  const [porPagar, setPorPagar] = useState<number | null>(null)
 
   useEffect(() => {
     if (!supabase) return
@@ -28,6 +30,11 @@ export default function Panel() {
         setVehiculos((data ?? []) as VehiculoFicha[])
         setCargando(false)
       })
+    // Saldos de ventas (admin/gerencia) y gastos sin pagar (solo admin: RLS de gasto).
+    supabase.from('v_saldo_venta').select('saldo').gt('saldo', 0)
+      .then(({ data }) => setPorCobrar(((data ?? []) as { saldo: number }[]).reduce((a, x) => a + x.saldo, 0)))
+    supabase.from('gasto').select('importe').eq('pagado', false)
+      .then(({ data }) => setPorPagar(((data ?? []) as { importe: number }[]).reduce((a, x) => a + x.importe, 0)))
   }, [])
 
   if (cargando) return <Cargando />
@@ -61,6 +68,8 @@ export default function Panel() {
         <Kpi label="Atrasadas" valor={String(criticas + enAlerta)} nota={`${criticas} en rojo (${dias_critico}+ días) · ${enAlerta} en amarillo (${dias_alerta}+)`} />
         {veCifras && <Kpi label="Capital invertido" valor={mxn(capital)} nota="Compra + gastos de las unidades activas" />}
         {veCifras && <Kpi label="Utilidad proyectada" valor={mxn(utilidad)} nota="Contra el precio autorizado" />}
+        {porCobrar !== null && perfil?.rol !== 'comisionista' && <Kpi label="Por cobrar" valor={mxn(porCobrar)} nota="Ventas con dinero pendiente" />}
+        {veCifras && porPagar !== null && <Kpi label="Por pagar" valor={mxn(porPagar)} nota="Gastos registrados sin pagar" />}
       </div>
 
       <Seccion titulo="Unidades activas" descripcion="Las que llevan más días en inventario aparecen primero.">

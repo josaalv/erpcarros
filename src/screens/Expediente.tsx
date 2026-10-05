@@ -11,7 +11,7 @@ import { useBorrador } from '../lib/useBorrador'
 import { BUCKET_DOCUMENTOS, abrirArchivo, quitarArchivos, subirArchivo } from '../lib/archivos'
 import { miniatura } from '../lib/miniatura'
 import { Bitacora } from '../components/Bitacora'
-import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, Dato, EtiquetaBadge, Seccion } from '../components/Ui'
+import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, Dato, EtiquetaBadge, Seccion, Badge } from '../components/Ui'
 import type { VehiculoFicha, Gasto, Proveedor, TipoDocumento, Documento, Aportacion, Socio, CategoriaGasto } from '../types'
 
 interface Compra { id: number; vehiculo_id: number; precio: number; comision: number; impuestos: number; iva: number }
@@ -387,6 +387,9 @@ function EliminarUnidad({ veh, documentos, gastos, onEliminada }: { veh: Vehicul
     setEliminando(true)
     setError(null)
     // Storage primero: Postgres no conoce los archivos y la cascada no los borra.
+    // Los cobros no cascadean con la venta (FK sin acción): se quitan antes.
+    const { error: errCobros } = await supabase.from('cobro').delete().eq('vehiculo_id', veh.id)
+    if (errCobros) { setEliminando(false); setError(errCobros.message); return }
     await quitarArchivos([...documentos.map((d) => d.archivo_path), ...gastos.map((g) => g.comprobante_path)])
     const { error: errBorrar } = await supabase.from('vehiculo').delete().eq('id', veh.id)
     setEliminando(false)
@@ -559,6 +562,8 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
   const [proveedores, setProveedores] = useState<Proveedor[]>([])
   const total = gastos.reduce((acc, g) => acc + g.importe, 0)
   const sinComprobante = gastos.filter((g) => !g.comprobante_path).length
+  const pendientes = gastos.filter((g) => !g.pagado)
+  const porPagar = pendientes.reduce((acc, g) => acc + g.importe, 0)
   const nombreCategoria = (catId: number) => categorias.find((c) => c.id === catId)?.nombre ?? '—'
   const nombreProveedor = (id: number | null) => (id === null ? '—' : proveedores.find((p) => p.id === id)?.nombre ?? '—')
 
@@ -576,6 +581,14 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
     onCambio()
   }
 
+  async function marcarPagado(g: Gasto) {
+    if (!supabase || !window.confirm(`¿Marcar como pagado "${g.descripcion}" por ${mxn(g.importe)} con fecha de hoy?`)) return
+    setError(null)
+    const { error } = await supabase.from('gasto').update({ pagado: true, fecha_pago: hoyISO(), fecha_vencimiento: null }).eq('id', g.id)
+    if (error) { setError(error.message); return }
+    onCambio()
+  }
+
   async function ver(g: Gasto) {
     if (!g.comprobante_path) return
     const err = await abrirArchivo(g.comprobante_path)
@@ -585,35 +598,45 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
   return (
     <Seccion
       titulo="Gastos"
-      descripcion={`${gastos.length} gastos · total ${mxn(total)}${sinComprobante > 0 ? ` · ${sinComprobante} sin comprobante` : ''}`}
+      descripcion={`${gastos.length} gastos · total ${mxn(total)}${pendientes.length ? ` · ${mxn(porPagar)} por pagar` : ''}${sinComprobante > 0 ? ` · ${sinComprobante} sin comprobante` : ''}`}
       acciones={<button className="btn btn-primario" onClick={() => setAbrirNuevo(true)}>+ Registrar gasto</button>}
     >
       {error && <div style={{ marginBottom: 12 }}><Alerta>{error}</Alerta></div>}
       <div className="tabla-wrap">
         <table className="tabla">
           <thead>
-            <tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th>Proveedor</th><th>Comprobante</th><th className="num">Importe</th><th></th></tr>
+            <tr><th>Gasto</th><th>Proveedor</th><th>Comprobante</th><th>Pago</th><th className="num">Importe</th><th></th></tr>
           </thead>
           <tbody>
             {gastos.map((g) => (
               <tr key={g.id}>
-                <td className="nowrap">{fecha(g.fecha)}</td>
-                <td>{g.descripcion}</td>
-                <td className="texto-suave">{nombreCategoria(g.categoria_id)}</td>
+                <td>
+                  {g.descripcion}
+                  <span className="unidad-folio">{fecha(g.fecha)} · {nombreCategoria(g.categoria_id)}</span>
+                </td>
                 <td className="texto-suave">{nombreProveedor(g.proveedor_id)}</td>
                 <td>
                   {g.comprobante_path
                     ? <button className="btn-link" onClick={() => ver(g)}>Ver ✓</button>
                     : <span className="texto-aviso">Falta</span>}
                 </td>
+                <td>
+                  {g.pagado
+                    ? <Badge tono="ok">Pagado</Badge>
+                    : <>
+                      <Badge tono="aviso">Por pagar</Badge>
+                      {g.fecha_vencimiento && <span className="unidad-folio">vence {fecha(g.fecha_vencimiento)}</span>}
+                    </>}
+                </td>
                 <td className="num">{mxn(g.importe)}</td>
                 <td className="acciones-celda">
+                  {!g.pagado && <button className="btn-link" onClick={() => marcarPagado(g)}>Marcar pagado</button>}
                   <button className="btn-link" onClick={() => setEditando(g)}>Editar</button>
                   <button className="btn-link peligro" onClick={() => eliminar(g)}>Eliminar</button>
                 </td>
               </tr>
             ))}
-            {gastos.length === 0 && <tr><td colSpan={7} className="vacio">Sin gastos registrados todavía.</td></tr>}
+            {gastos.length === 0 && <tr><td colSpan={6} className="vacio">Sin gastos registrados todavía.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -646,8 +669,10 @@ function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGua
     proveedorId: gasto?.proveedor_id ? String(gasto.proveedor_id) : '',
     importe: gasto ? String(gasto.importe) : '',
     fecha: gasto?.fecha ?? hoyISO(),
+    pagado: gasto ? gasto.pagado : true,
+    fechaVencimiento: gasto?.fecha_vencimiento ?? '',
   })
-  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
+  const set = (k: keyof typeof form, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
   // El archivo no cabe en el borrador de localStorage: se elige al final.
   const [archivo, setArchivo] = useState<File | null>(null)
   const [vista, setVista] = useState<string | null>(null)
@@ -686,6 +711,10 @@ function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGua
       importe: Number(form.importe),
       fecha: form.fecha,
       comprobante_path: ruta,
+      pagado: form.pagado,
+      // Si ya estaba pagado se respeta su fecha de pago; si se marca pagado aquí, se toma la fecha del gasto.
+      fecha_pago: form.pagado ? (gasto?.pagado ? gasto.fecha_pago : null) ?? form.fecha : null,
+      fecha_vencimiento: form.pagado ? null : form.fechaVencimiento || null,
     }
     const { error } = gasto
       ? await supabase.from('gasto').update(datos).eq('id', gasto.id)
@@ -721,6 +750,19 @@ function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGua
           </Campo>
           <Campo label="Importe"><input className="input" required type="number" step="0.01" min={0} value={form.importe} onChange={(e) => set('importe', e.target.value)} /></Campo>
           <Campo label="Fecha"><input className="input" required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} /></Campo>
+        </div>
+        <div className="form-grid">
+          <Campo label="¿Ya se pagó?">
+            <label className="check" style={{ minHeight: 42 }}>
+              <input type="checkbox" checked={form.pagado} onChange={(e) => set('pagado', e.target.checked)} />
+              {form.pagado ? 'Sí, ya está pagado' : 'No, queda pendiente'}
+            </label>
+          </Campo>
+          {!form.pagado && (
+            <Campo label="Fecha límite de pago" ayuda="Aparece en Por pagar">
+              <input className="input" type="date" value={form.fechaVencimiento} onChange={(e) => set('fechaVencimiento', e.target.value)} />
+            </Campo>
+          )}
         </div>
         <Campo label="Comprobante (foto del ticket o factura)">
           {archivo ? (

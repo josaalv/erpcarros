@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useCatalogos } from '../lib/catalogos'
 import {
   mxn, porcentaje, fecha, legible, km,
-  ESTADO_COMERCIAL, ESTADO_DOCUMENTAL, ESTADO_VENTA, CANAL_LABEL, FORMA_PAGO_LABEL, TRANSMISION_LABEL, ESQUEMA_COMISION_LABEL,
+  ESTADO_COMERCIAL, ESTADO_DOCUMENTAL, ESTADO_VENTA, CANAL_LABEL, FORMA_PAGO_LABEL, TRANSMISION_LABEL, ESQUEMA_COMISION_LABEL, ORIGEN_COBRO_LABEL,
 } from '../lib/helpers'
 import { Cargando, Badge } from './Ui'
 
@@ -29,6 +29,7 @@ const TABLA_LABEL: Record<string, string> = {
   cierre_financiero: 'Cierre financiero',
   liquidacion: 'Liquidación a socio',
   socio: 'Socio',
+  cobro: 'Cobro',
 }
 
 const ACCION: Record<string, { label: string; tono: 'ok' | 'info' | 'peligro' }> = {
@@ -51,7 +52,8 @@ const CAMPO_LABEL: Record<string, string> = {
   monto_pagado: 'Monto pagado', fecha_pago: 'Fecha de pago', costo_total: 'Costo total', precio_final: 'Precio final',
   utilidad_bruta: 'Utilidad', margen: 'Margen', roi: 'ROI', dias_inventario: 'Días en inventario', cerrado_por: 'Cerrado por',
   capital_aportado: 'Capital', participacion: 'Participación', utilidad_asignada: 'Utilidad asignada', monto_a_pagar: 'A pagar',
-  pagado: 'Pagado', activo: 'Activo', observaciones: 'Observaciones', valor_toma: 'Valor de toma', veh_tomado_id: 'Unidad tomada',
+  pagado: 'Pagado', fecha_vencimiento: 'Fecha límite', origen: 'De', referencia: 'Referencia',
+  fecha_liquidacion_esperada: 'Se espera el resto', activo: 'Activo', observaciones: 'Observaciones', valor_toma: 'Valor de toma', veh_tomado_id: 'Unidad tomada',
 }
 
 const DINERO = new Set([
@@ -81,6 +83,7 @@ function valor(campo: string, v: unknown, nombres: Nombres): string {
   if (campo === 'forma_pago') return FORMA_PAGO_LABEL[s] ?? legible(s)
   if (campo === 'transmision') return TRANSMISION_LABEL[s] ?? legible(s)
   if (campo === 'esquema') return ESQUEMA_COMISION_LABEL[s] ?? legible(s)
+  if (campo === 'origen') return ORIGEN_COBRO_LABEL[s] ?? legible(s)
   const catalogo = nombres[campo]
   if (catalogo && typeof v === 'number') return catalogo[v] ?? `#${v}`
   return s

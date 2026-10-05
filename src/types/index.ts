@@ -92,6 +92,10 @@ export interface Gasto {
   pagador_socio_id: number | null
   proveedor_id: number | null
   comprobante_path: string | null
+  /** false = ya cuenta en el costo pero falta pagarlo (Por pagar). */
+  pagado: boolean
+  fecha_pago: string | null
+  fecha_vencimiento: string | null
   created_at: string
 }
 
@@ -230,6 +234,32 @@ export interface Venta {
   fecha_entrega: string | null
   estado: 'en_proceso' | 'completada' | 'entregada' | 'cancelada'
   observaciones: string | null
+  valor_toma: number | null
+  fecha_liquidacion_esperada: string | null
+}
+
+/** Entrada de dinero de una venta (cliente, financiera, otro). */
+export interface Cobro {
+  id: number
+  venta_id: number
+  vehiculo_id: number
+  fecha: string
+  monto: number
+  origen: 'cliente' | 'financiera' | 'otro'
+  referencia: string | null
+}
+
+/** v_saldo_venta: saldo = precio − toma a cuenta − cobros. */
+export interface SaldoVenta {
+  venta_id: number
+  vehiculo_id: number
+  estado: Venta['estado']
+  precio_acordado: number
+  valor_toma: number
+  cobrado: number
+  saldo: number
+  ultimo_cobro: string | null
+  fecha_liquidacion_esperada: string | null
 }
 
 export interface Comision {
