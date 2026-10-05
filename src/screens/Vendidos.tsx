@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useBorrador } from '../lib/useBorrador'
-import { mxn, porcentaje, fecha, diasEntre, numeroONull, CANALES, CANAL_LABEL } from '../lib/helpers'
+import { mxn, porcentaje, fecha, numeroONull, CANALES, CANAL_LABEL } from '../lib/helpers'
 import { Modal, FormBotones, PageHeader, Alerta, Cargando, NombreUnidad, Badge, Kpi } from '../components/Ui'
 import type { VehiculoFicha, Venta, CierreFinanciero, Comision } from '../types'
 
@@ -15,7 +15,7 @@ type VentaConComisionista = Venta & { comisionista?: { nombre: string } | null }
  * borraría también el motivo que se acaba de registrar.
  */
 export default function Vendidos() {
-  const { perfil, session } = useAuth()
+  const { perfil } = useAuth()
   const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
   const [ventas, setVentas] = useState<VentaConComisionista[]>([])
   const [cierres, setCierres] = useState<CierreFinanciero[]>([])
@@ -59,52 +59,13 @@ export default function Vendidos() {
     setGuardandoId(null)
   }
 
-  async function recalcularCierre(v: VehiculoFicha, venta: VentaConComisionista, cierre: CierreFinanciero, motivo: string) {
-    if (!supabase || !session) return 'Supabase no está configurado.'
-
-    const [costoRes, aportRes] = await Promise.all([
-      supabase.from('v_costo_vehiculo').select('costo_total').eq('vehiculo_id', venta.vehiculo_id).maybeSingle(),
-      supabase.from('v_participacion_socio').select('*').eq('vehiculo_id', venta.vehiculo_id),
-    ])
-    if (costoRes.error || aportRes.error) return (costoRes.error ?? aportRes.error)!.message
-
-    const costoTotal = (costoRes.data as { costo_total: number } | null)?.costo_total ?? 0
-    const precioFinal = venta.precio_acordado
-    const utilidadBruta = precioFinal - costoTotal
-
-    const { error: errReapertura } = await supabase.from('reapertura').insert({ cierre_id: cierre.id, motivo, usuario_id: session.user.id })
-    if (errReapertura) return errReapertura.message
-
-    const { error: errLiqBorrar } = await supabase.from('liquidacion').delete().eq('cierre_id', cierre.id)
-    if (errLiqBorrar) return errLiqBorrar.message
-
-    const { error: errCierre } = await supabase.from('cierre_financiero').update({
-      costo_total: costoTotal,
-      precio_final: precioFinal,
-      utilidad_bruta: utilidadBruta,
-      margen: precioFinal > 0 ? utilidadBruta / precioFinal : 0,
-      roi: costoTotal > 0 ? utilidadBruta / costoTotal : 0,
-      dias_inventario: diasEntre(v.fecha_compra, venta.fecha_venta),
-      canal_venta: venta.canal,
-      estado: 'reabierto',
-      cerrado_por: session.user.id,
-    }).eq('id', cierre.id)
-    if (errCierre) return errCierre.message
-
-    const participaciones = (aportRes.data ?? []) as { socio_id: number; capital_aportado: number; participacion: number }[]
-    if (participaciones.length > 0) {
-      const { error: errLiq } = await supabase.from('liquidacion').insert(participaciones.map((p) => ({
-        cierre_id: cierre.id,
-        vehiculo_id: venta.vehiculo_id,
-        socio_id: p.socio_id,
-        capital_aportado: p.capital_aportado,
-        participacion: p.participacion,
-        utilidad_asignada: p.participacion * utilidadBruta,
-        monto_a_pagar: p.capital_aportado + p.participacion * utilidadBruta,
-      })))
-      if (errLiq) return `El cierre se actualizó, pero falló la liquidación de socios: ${errLiq.message}. Vuelve a recalcular.`
-    }
-    return null
+  async function recalcularCierre(venta: VentaConComisionista, motivo: string) {
+    if (!supabase) return 'Supabase no está configurado.'
+    // Una sola transacción en la base (migración 019): deja la constancia en
+    // reapertura, actualiza el cierre en su lugar y la liquidación de cada
+    // socio sin perder qué ya se le pagó.
+    const { error: err } = await supabase.rpc('recalcular_cierre', { p_venta_id: venta.id, p_motivo: motivo })
+    return err ? err.message : null
   }
 
   if (cargando) return <Cargando />
@@ -227,7 +188,7 @@ export default function Vendidos() {
           cierre={reabriendo.cierre}
           onClose={() => setReabriendo(null)}
           onConfirmar={async (motivo) => {
-            const err = await recalcularCierre(reabriendo.v, reabriendo.venta, reabriendo.cierre, motivo)
+            const err = await recalcularCierre(reabriendo.venta, motivo)
             if (!err) { setReabriendo(null); setAviso('Cierre recalculado y liquidación de socios actualizada.'); recargar() }
             return err
           }}
