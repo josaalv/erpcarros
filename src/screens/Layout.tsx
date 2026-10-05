@@ -30,6 +30,7 @@ const GRUPOS: GrupoNav[] = [
   {
     titulo: 'Administración',
     items: [
+      { to: '/resultados', label: 'Resultados', roles: ADMIN },
       { to: '/socios', label: 'Socios', roles: ADMIN },
       { to: '/configuracion', label: 'Configuración', roles: ADMIN },
     ],

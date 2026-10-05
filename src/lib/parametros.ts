@@ -6,6 +6,9 @@ export interface Parametros {
   comision_subasta: number
   margen_deseado: number
   dias_atribucion_referido: number
+  /** Días en inventario a partir de los cuales una unidad se marca en amarillo / rojo. */
+  dias_alerta: number
+  dias_critico: number
 }
 
 export const PARAMETROS_DEFAULT: Parametros = {
@@ -13,6 +16,8 @@ export const PARAMETROS_DEFAULT: Parametros = {
   comision_subasta: 5000,
   margen_deseado: 20,
   dias_atribucion_referido: 15,
+  dias_alerta: 30,
+  dias_critico: 45,
 }
 
 let cache: Parametros | null = null

@@ -248,3 +248,17 @@ details.plegable summary { cursor: pointer; color: var(--text-soft); font-weight
 /* Título de tarjeta con botón a la derecha */
 .card-encabezado-acciones { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
 .card-encabezado-acciones .card-titulo { margin-bottom: 0; }
+
+/* Barra de filtros sobre una tabla */
+.filtros { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.filtros .input, .filtros .select { width: auto; min-width: 180px; flex: 0 1 260px; }
+.nowrap { white-space: nowrap; }
+
+/* Bitácora */
+.bitacora-cambios { margin: 0; padding-left: 16px; }
+.bitacora-cambios li { margin: 2px 0; }
+.bitacora-cambios s { color: var(--text-soft); }
+.texto-aviso { color: var(--warning); font-weight: 600; }
+.texto-ok { color: var(--success); font-weight: 600; }
+.texto-peligro { color: var(--danger); font-weight: 600; }
+.filtros .check, .filtros-cuenta { align-self: center; }

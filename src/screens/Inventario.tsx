@@ -3,8 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
-import { mxn, km, etiqueta, ESTADO_COMERCIAL, ESTADO_DOCUMENTAL } from '../lib/helpers'
-import { PageHeader, Cargando, EtiquetaBadge } from '../components/Ui'
+import { mxn, km, diasDesde, etiqueta, ESTADO_COMERCIAL, ESTADO_DOCUMENTAL } from '../lib/helpers'
+import { useParametros } from '../lib/parametros'
+import { PageHeader, Cargando, EtiquetaBadge, DiasBadge } from '../components/Ui'
 import type { VehiculoFicha } from '../types'
 
 /** Solo unidades activas; las vendidas viven en Vendidos. */
@@ -13,7 +14,10 @@ export default function Inventario() {
   const navigate = useNavigate()
   const { estados } = useCatalogos()
   const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
+  const { dias_alerta } = useParametros()
   const [busqueda, setBusqueda] = useState('')
+  const [etapa, setEtapa] = useState('')
+  const [soloAtrasadas, setSoloAtrasadas] = useState(false)
   const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
@@ -33,7 +37,9 @@ export default function Inventario() {
   const puedeCrear = perfil?.rol === 'admin' || perfil?.rol === 'gerencia'
   const q = busqueda.trim().toLowerCase()
   const filtrados = vehiculos.filter((v) =>
-    !q || `${v.id_interno} ${v.marca} ${v.modelo} ${v.anio}`.toLowerCase().includes(q)
+    (!q || `${v.id_interno} ${v.marca} ${v.modelo} ${v.anio} ${v.vin ?? ''} ${v.torre ?? ''}`.toLowerCase().includes(q))
+    && (!etapa || String(v.estado_proceso_id) === etapa)
+    && (!soloAtrasadas || (diasDesde(v.fecha_compra) ?? 0) >= dias_alerta)
   )
   const nombreEstado = (id: number) => estados.find((e) => e.id === id)?.nombre ?? '—'
 
@@ -45,13 +51,18 @@ export default function Inventario() {
         acciones={puedeCrear && <Link to="/vehiculo/nuevo" className="btn btn-primario">+ Nueva unidad</Link>}
       />
 
-      <input
-        className="input"
-        placeholder="Buscar por marca, modelo, año o folio…"
-        value={busqueda}
-        onChange={(e) => setBusqueda(e.target.value)}
-        style={{ maxWidth: 380, marginBottom: 16 }}
-      />
+      <div className="filtros">
+        <input className="input" placeholder="Buscar por marca, modelo, año, folio, serie o torre…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+        <select className="select" value={etapa} onChange={(e) => setEtapa(e.target.value)}>
+          <option value="">Todas las etapas</option>
+          {estados.filter((e) => !e.es_final).map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+        </select>
+        <label className="check">
+          <input type="checkbox" checked={soloAtrasadas} onChange={(e) => setSoloAtrasadas(e.target.checked)} />
+          Solo con {dias_alerta}+ días
+        </label>
+        {filtrados.length !== vehiculos.length && <span className="texto-suave filtros-cuenta">{filtrados.length} de {vehiculos.length}</span>}
+      </div>
 
       {cargando ? <Cargando /> : (
         <div className="tabla-wrap">
@@ -60,6 +71,7 @@ export default function Inventario() {
               <tr>
                 <th>Unidad</th>
                 <th>Etapa</th>
+                <th>Días</th>
                 <th>Kilometraje</th>
                 <th>Estado comercial</th>
                 <th>Documentación</th>
@@ -75,6 +87,7 @@ export default function Inventario() {
                     <span className="unidad-folio">{v.id_interno}</span>
                   </td>
                   <td className="texto-suave">{nombreEstado(v.estado_proceso_id)}</td>
+                  <td><DiasBadge dias={diasDesde(v.fecha_compra)} /></td>
                   <td>{km(v.kilometraje_final ?? v.kilometraje)}</td>
                   <td><EtiquetaBadge etiqueta={etiqueta(ESTADO_COMERCIAL, v.estado_comercial)} /></td>
                   <td><EtiquetaBadge etiqueta={etiqueta(ESTADO_DOCUMENTAL, v.estado_documental)} /></td>
@@ -83,7 +96,7 @@ export default function Inventario() {
                 </tr>
               ))}
               {filtrados.length === 0 && (
-                <tr><td colSpan={7} className="vacio">{q ? 'Ninguna unidad coincide con la búsqueda.' : 'Todavía no hay unidades activas.'}</td></tr>
+                <tr><td colSpan={8} className="vacio">{q || etapa || soloAtrasadas ? 'Ninguna unidad coincide con los filtros.' : 'Todavía no hay unidades activas.'}</td></tr>
               )}
             </tbody>
           </table>

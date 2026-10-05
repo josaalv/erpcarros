@@ -90,6 +90,8 @@ export interface Gasto {
   fecha: string
   pagador_tipo: 'empresa' | 'socio'
   pagador_socio_id: number | null
+  proveedor_id: number | null
+  comprobante_path: string | null
   created_at: string
 }
 
@@ -314,4 +316,10 @@ export interface RoiSegmento {
   margen_promedio: number
   roi_promedio: number
   dias_promedio: number
+}
+
+export interface Proveedor {
+  id: number
+  nombre: string
+  activo: boolean
 }

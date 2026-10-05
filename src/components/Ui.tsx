@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Etiqueta, Tono } from '../lib/helpers'
+import { useParametros } from '../lib/parametros'
 
 export function Modal({ titulo, subtitulo, children, onClose, ancho = 460 }: {
   titulo: string
@@ -138,4 +139,12 @@ export function NombreUnidad({ v, link = true }: {
       <span className="unidad-folio">{v.id_interno}</span>
     </>
   )
+}
+
+/** Días en inventario con semáforo (umbrales en Configuración → General). */
+export function DiasBadge({ dias }: { dias: number | null }) {
+  const { dias_alerta, dias_critico } = useParametros()
+  if (dias === null) return <span className="texto-suave">—</span>
+  const tono: Tono = dias >= dias_critico ? 'peligro' : dias >= dias_alerta ? 'aviso' : 'ok'
+  return <span className={`badge badge-${tono}`}>{dias} {dias === 1 ? 'día' : 'días'}</span>
 }

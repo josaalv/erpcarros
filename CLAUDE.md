@@ -188,6 +188,28 @@ Supabase o el SQL Editor, igual que en `robsen-salon`):
     (no se borra: el MCP no aplica SQL con borrados). Heredan `es_demo` de la
     unidad y `dias_inventario` = 0 si no hay fecha de compra.
 
+18. `020_bitacora_y_comprobante_gasto.sql` — tabla `bitacora` (solo
+    lectura para admin; sin policies de escritura) llenada por el trigger
+    `registrar_bitacora()` (`security definer`) en vehiculo, compra, gasto,
+    aportacion, venta, comision, cierre_financiero, liquidacion y socio: en
+    cambios guarda solo `{campo: [antes, después]}`. **Las bajas van en
+    `020b_bitacora_bajas.sql`, que se pega a mano en el SQL Editor** (el MCP
+    no aplica sentencias con la palabra de borrado). Además `gasto.proveedor_id`
+    y `gasto.comprobante_path` (Storage `documentos-vehiculo/<veh>/gastos/`).
+    UI: pestaña Historial en el Expediente y en Configuración
+    (`src/components/Bitacora.tsx`); comprobante y proveedor en `GastoModal`;
+    helpers de Storage en `src/lib/archivos.ts`.
+
+**Resultados** (`src/screens/Resultados.tsx`, admin): unidades cerradas por
+periodo, KPIs, tabla por marca y por unidad con desvío de reparación (gasto
+real vs `evaluacion_puja.costo_reparacion_estimado`). En el Expediente
+(Compra y gastos) `ComparativoEvaluacion` compara lo estimado al comprar
+contra lo real. **Semáforo de días en inventario**: `DiasBadge` en `Ui.tsx`
+con umbrales `dias_alerta`/`dias_critico` (parámetros, Configuración →
+General); Panel e Inventario lo muestran; Inventario filtra por etapa y
+"solo atrasadas". La transmisión ya no tiene default en el alta: es
+obligatoria.
+
 **Detector de contrato de Prosubastas** (paso 1 del alta): el usuario sube
 el PDF "Contrato de compraventa a través de subasta" (una unidad por
 página; puede traer varias). `src/lib/contratoPdf.ts` lo lee en el

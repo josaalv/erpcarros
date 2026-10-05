@@ -6,14 +6,16 @@ import { fecha, ROL_LABEL } from '../lib/helpers'
 import { PageHeader, Campo, Alerta, Modal, Cargando } from '../components/Ui'
 import { TablaEditable } from '../components/TablaEditable'
 import Usuarios from './Usuarios'
+import { Bitacora } from '../components/Bitacora'
 
-type Pestana = 'general' | 'catalogos' | 'personas' | 'usuarios' | 'datos'
+type Pestana = 'general' | 'catalogos' | 'personas' | 'usuarios' | 'historial' | 'datos'
 
 const PESTANAS: { clave: Pestana; label: string }[] = [
   { clave: 'general', label: 'General' },
   { clave: 'catalogos', label: 'Catálogos' },
   { clave: 'personas', label: 'Personas y empresas' },
   { clave: 'usuarios', label: 'Usuarios' },
+  { clave: 'historial', label: 'Historial de cambios' },
   { clave: 'datos', label: 'Datos y respaldos' },
 ]
 
@@ -44,6 +46,7 @@ export default function Configuracion() {
       {pestana === 'catalogos' && <Catalogos />}
       {pestana === 'personas' && <Personas />}
       {pestana === 'usuarios' && <Usuarios />}
+      {pestana === 'historial' && <Bitacora />}
       {pestana === 'datos' && <DatosYRespaldos />}
     </div>
   )
@@ -53,21 +56,13 @@ export default function Configuracion() {
 
 function General() {
   const actuales = useParametros()
-  const [form, setForm] = useState<Record<keyof Parametros, string>>({
-    empresa_nombre: actuales.empresa_nombre,
-    comision_subasta: String(actuales.comision_subasta),
-    margen_deseado: String(actuales.margen_deseado),
-    dias_atribucion_referido: String(actuales.dias_atribucion_referido),
-  })
+  const aForm = (p: Parametros) =>
+    Object.fromEntries(Object.entries(p).map(([k, v]) => [k, String(v)])) as Record<keyof Parametros, string>
+  const [form, setForm] = useState(() => aForm(actuales))
   const [cargado, setCargado] = useState(actuales)
   if (cargado !== actuales) {
     setCargado(actuales)
-    setForm({
-      empresa_nombre: actuales.empresa_nombre,
-      comision_subasta: String(actuales.comision_subasta),
-      margen_deseado: String(actuales.margen_deseado),
-      dias_atribucion_referido: String(actuales.dias_atribucion_referido),
-    })
+    setForm(aForm(actuales))
   }
   const set = (k: keyof Parametros, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
@@ -105,6 +100,12 @@ function General() {
           </Campo>
           <Campo label="Días que dura un referido" ayuda="Tiempo que un cliente queda a nombre del comisionista">
             <input className="input" required type="number" min={1} step="1" value={form.dias_atribucion_referido} onChange={(e) => set('dias_atribucion_referido', e.target.value)} />
+          </Campo>
+          <Campo label="Días en inventario: alerta" ayuda="A partir de aquí la unidad se marca en amarillo">
+            <input className="input" required type="number" min={1} step="1" value={form.dias_alerta} onChange={(e) => set('dias_alerta', e.target.value)} />
+          </Campo>
+          <Campo label="Días en inventario: crítico" ayuda="A partir de aquí se marca en rojo">
+            <input className="input" required type="number" min={1} step="1" value={form.dias_critico} onChange={(e) => set('dias_critico', e.target.value)} />
           </Campo>
         </div>
         {error && <Alerta>{error}</Alerta>}
