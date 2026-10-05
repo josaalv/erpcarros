@@ -228,6 +228,22 @@ búsqueda y filtros (la selección solo cuenta filas visibles).
     authenticated;`** o nadie la podrá leer, y nunca usar `select *` sobre
     `vehiculo` (ni en el cliente ni en funciones invoker).
 
+20. `022_cobros_y_gastos_por_pagar.sql` — **por cobrar**: tabla `cobro`
+    (venta_id, vehiculo_id, fecha, monto, origen cliente/financiera/otro,
+    referencia; RLS admin/gerencia) y vista `v_saldo_venta` (saldo = precio
+    − toma a cuenta − cobros; excluye canceladas). `venta.fecha_liquidacion_esperada`.
+    Una venta puede estar cerrada y seguir con saldo (p. ej. lo que paga la
+    financiera). **Por pagar**: `gasto.pagado` (default true), `fecha_pago`,
+    `fecha_vencimiento` — el gasto cuenta en el costo desde que se registra,
+    pagado o no. `cobro.venta_id` es FK sin acción al borrar: Eliminar unidad
+    y el botón maestro borran los cobros primero. Bajas de cobro en la
+    bitácora: `022b_bitacora_bajas_cobro.sql` (pegar en el SQL Editor).
+    UI: `PorCobrar.tsx` (con `CobrosModal`), `PorPagar.tsx`, "Recibido al
+    vender" y fecha esperada en `VentaModal`, pagado/pendiente en
+    `GastoModal`, KPIs en Panel, y en Socios el estado de cuenta (capital
+    activo = aportado en unidades no vendidas, ya pagado, por pagarle).
+    Menú: grupo "Dinero" (Por cobrar, Por pagar, Resultados, Socios).
+
 **Pruebas de permisos**: `supabase/tests/rls_por_rol.sql` corre en una
 transacción con rollback y revisa gerencia, comisionista, demo, anónimo y
 admin (control). Correrlo (MCP `execute_sql` o SQL Editor) después de

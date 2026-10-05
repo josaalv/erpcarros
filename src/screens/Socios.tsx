@@ -54,6 +54,12 @@ export default function Socios() {
   if (cargando) return <Cargando />
 
   const totalAportado = (sid: number) => aportaciones.filter((a) => a.socio_id === sid).reduce((acc, a) => acc + a.monto, 0)
+  // Capital activo = aportado en unidades que aún no se venden (sigue trabajando).
+  const vendida = (vid: number) => vehiculos.find((v) => v.id === vid)?.estado_comercial === 'vendido'
+  const capitalActivo = (sid?: number) => aportaciones
+    .filter((a) => (sid === undefined || a.socio_id === sid) && !vendida(a.vehiculo_id))
+    .reduce((acc, a) => acc + a.monto, 0)
+  const totalPagado = (sid: number) => liquidaciones.filter((l) => l.socio_id === sid && l.pagado).reduce((acc, l) => acc + l.monto_a_pagar, 0)
   const totalPendiente = (sid: number) => liquidaciones.filter((l) => l.socio_id === sid && !l.pagado).reduce((acc, l) => acc + l.monto_a_pagar, 0)
   const nombreSocio = (sid: number) => socios.find((s) => s.id === sid)?.nombre ?? '—'
   const unidadDe = (vid: number) => {
@@ -67,7 +73,7 @@ export default function Socios() {
     <div>
       <PageHeader
         titulo="Socios"
-        descripcion="Quién puso capital en cada unidad y cuánto se le debe al cerrar las ventas."
+        descripcion="Estado de cuenta de cada socio: capital trabajando en unidades activas, lo que ya se le regresó y lo que se le debe de ventas cerradas."
         acciones={
           <>
             <button className="btn btn-secundario" onClick={() => setAportacionModal('nueva')}>+ Registrar aportación</button>
@@ -78,7 +84,8 @@ export default function Socios() {
 
       <div className="kpis">
         <Kpi label="Socios activos" valor={String(socios.filter((s) => s.activo).length)} />
-        <Kpi label="Capital aportado" valor={mxn(aportaciones.reduce((acc, a) => acc + a.monto, 0))} />
+        <Kpi label="Capital activo" valor={mxn(capitalActivo())} nota="Invertido en unidades que aún no se venden" />
+        <Kpi label="Capital aportado (histórico)" valor={mxn(aportaciones.reduce((acc, a) => acc + a.monto, 0))} />
         <Kpi label="Por pagar a socios" valor={mxn(pendientesPago.reduce((acc, l) => acc + l.monto_a_pagar, 0))} nota={`${pendientesPago.length} liquidaciones pendientes`} />
       </div>
 
@@ -94,15 +101,20 @@ export default function Socios() {
         <div className="tabla-wrap">
           <table className="tabla">
             <thead>
-              <tr><th>Socio</th><th>Contacto</th><th className="num">Capital aportado</th><th className="num">Por pagarle</th><th>Activo</th><th></th></tr>
+              <tr>
+                <th>Socio</th><th>Contacto</th><th className="num">Capital activo</th><th className="num">Aportado histórico</th>
+                <th className="num">Ya se le pagó</th><th className="num">Por pagarle</th><th>Activo</th><th></th>
+              </tr>
             </thead>
             <tbody>
               {socios.map((s) => (
                 <tr key={s.id} className={s.activo ? '' : 'inactivo'}>
                   <td style={{ fontWeight: 600 }}>{s.nombre}</td>
                   <td className="texto-suave">{[s.telefono, s.correo].filter(Boolean).join(' · ') || '—'}</td>
+                  <td className="num"><strong>{mxn(capitalActivo(s.id))}</strong></td>
                   <td className="num">{mxn(totalAportado(s.id))}</td>
-                  <td className="num">{mxn(totalPendiente(s.id))}</td>
+                  <td className="num">{mxn(totalPagado(s.id))}</td>
+                  <td className={`num ${totalPendiente(s.id) > 0 ? 'texto-aviso' : ''}`}>{mxn(totalPendiente(s.id))}</td>
                   <td>
                     <label className="check">
                       <input type="checkbox" checked={s.activo} onChange={(e) => ejecutar(supabase!.from('socio').update({ activo: e.target.checked }).eq('id', s.id))} />
@@ -119,7 +131,7 @@ export default function Socios() {
                   </td>
                 </tr>
               ))}
-              {socios.length === 0 && <tr><td colSpan={6} className="vacio">Todavía no hay socios.</td></tr>}
+              {socios.length === 0 && <tr><td colSpan={8} className="vacio">Todavía no hay socios.</td></tr>}
             </tbody>
           </table>
         </div>

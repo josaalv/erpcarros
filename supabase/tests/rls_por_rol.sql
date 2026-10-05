@@ -26,6 +26,10 @@ insert into socio (nombre) values ('Socio prueba RLS');
 insert into aportacion (vehiculo_id, socio_id, monto, fecha)
   select v.id, s.id, 85000, current_date from vehiculo v, socio s
   where v.id_interno = 'PRUEBA-RLS' and s.nombre = 'Socio prueba RLS';
+insert into venta (vehiculo_id, canal, precio_acordado, forma_pago, fecha_venta)
+  select id, 'directa', 130000, 'financiera', current_date from vehiculo where id_interno = 'PRUEBA-RLS';
+insert into cobro (venta_id, vehiculo_id, monto, origen)
+  select ve.id, ve.vehiculo_id, 30000, 'cliente' from venta ve join vehiculo v on v.id = ve.vehiculo_id where v.id_interno = 'PRUEBA-RLS';
 update compra set precio = 81000 where vehiculo_id = (select id from vehiculo where id_interno = 'PRUEBA-RLS');  -- deja una fila en bitacora
 
 create temporary table prueba_resultado (rol text, falla text);
@@ -66,6 +70,7 @@ begin
   if exists (select 1 from v_costo_vehiculo where costo_total > 0) then insert into prueba_resultado values (r, 've costos en v_costo_vehiculo'); end if;
   if exists (select 1 from v_participacion_socio where capital_aportado > 0) then insert into prueba_resultado values (r, 've capital en v_participacion_socio'); end if;
   if exists (select 1 from v_roi_segmento) then insert into prueba_resultado values (r, 've v_roi_segmento'); end if;
+  if not exists (select 1 from v_saldo_venta where saldo = 100000) then insert into prueba_resultado values (r, 'no ve el saldo por cobrar (debería: 130,000 − 30,000)'); end if;
   begin
     insert into compra (vehiculo_id, precio) select id, 1 from vehiculo where id_interno = 'PRUEBA-RLS';
     insert into prueba_resultado values (r, 'pudo insertar en compra');
@@ -102,6 +107,8 @@ begin
   if exists (select 1 from aportacion) then insert into prueba_resultado values (r, 've aportacion'); end if;
   if exists (select 1 from socio) then insert into prueba_resultado values (r, 've socio'); end if;
   if exists (select 1 from venta) then insert into prueba_resultado values (r, 've venta'); end if;
+  if exists (select 1 from cobro) then insert into prueba_resultado values (r, 've cobros'); end if;
+  if exists (select 1 from v_saldo_venta) then insert into prueba_resultado values (r, 've saldos de ventas'); end if;
   if exists (select 1 from cliente) then insert into prueba_resultado values (r, 've clientes que no refirió'); end if;
   if exists (select 1 from bitacora) then insert into prueba_resultado values (r, 've bitacora'); end if;
   if exists (select 1 from v_costo_vehiculo where costo_total > 0) then insert into prueba_resultado values (r, 've costos en v_costo_vehiculo'); end if;
@@ -125,6 +132,7 @@ begin
   end if;
   if exists (select 1 from vehiculo where not es_demo) then insert into prueba_resultado values (r, 've unidades reales en vehiculo'); end if;
   if exists (select 1 from compra) then insert into prueba_resultado values (r, 've compra'); end if;
+  if exists (select 1 from cobro) then insert into prueba_resultado values (r, 've cobros reales'); end if;
 end $$;
 reset role;
 
@@ -152,6 +160,10 @@ begin
   end;
   begin
     if exists (select 1 from compra) then insert into prueba_resultado values (r, 've compra'); end if;
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    if exists (select 1 from cobro) then insert into prueba_resultado values (r, 've cobros'); end if;
   exception when insufficient_privilege then null;
   end;
 end $$;
