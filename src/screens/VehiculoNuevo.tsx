@@ -5,14 +5,16 @@ import { useCatalogos } from '../lib/catalogos'
 import { useAuth } from '../lib/auth'
 import { useBorrador } from '../lib/useBorrador'
 import { useParametros } from '../lib/parametros'
-import { hoyISO, mxn, porcentaje, fecha, numeroONull, ESTADO_DOCUMENTO } from '../lib/helpers'
+import { hoyISO, mxn, porcentaje, fecha, numeroONull, ESTADO_DOCUMENTO, TRANSMISION_LABEL } from '../lib/helpers'
 import { PageHeader, Campo, Alerta, Cargando, Dato } from '../components/Ui'
 import { leerContratos, extraerPagina, type UnidadContrato } from '../lib/contratoPdf'
+import { miniatura } from '../lib/miniatura'
 import type { Subasta, Socio, TipoDocumento, CategoriaGasto } from '../types'
 
 interface FilaGasto { descripcion: string; categoriaId: string; importe: string; fecha: string }
 interface FilaSocio { socioId: string; monto: string }
 type EstadoDoc = 'no_aplica' | 'faltante' | 'en_tramite' | 'completo'
+interface ArchivoDoc { archivo: Blob; nombre: string; miniatura: string | null }
 
 interface Formulario {
   paso: number
@@ -67,6 +69,8 @@ export default function VehiculoNuevo() {
   const [vinsRegistrados, setVinsRegistrados] = useState<Set<string>>(new Set())
   const [leyendo, setLeyendo] = useState(false)
   const [avisoContrato, setAvisoContrato] = useState<string | null>(null)
+  // Archivos por tipo de documento: viven en memoria hasta guardar (no caben en el borrador).
+  const [archivosDoc, setArchivosDoc] = useState<Record<number, ArchivoDoc>>({})
 
   useEffect(() => {
     if (!supabase) return
@@ -149,6 +153,29 @@ export default function VehiculoNuevo() {
       contratoPagina: u.pagina, contratoArchivo: archivo.name,
     }))
     setAvisoContrato(`Se cargaron los datos de ${u.marca} ${u.modelo} ${u.anio} (página ${u.pagina}). Revísalos antes de seguir.`)
+    if (contrato) {
+      extraerPagina(archivo, u.pagina).then(async (pdf) => {
+        const doc: ArchivoDoc = { archivo: pdf, nombre: `Contrato ${u.marca} ${u.modelo} ${u.anio}.pdf`, miniatura: await miniatura(pdf) }
+        setArchivosDoc((a) => ({ ...a, [contrato.id]: doc }))
+      }).catch(() => setAvisoContrato('Se cargaron los datos, pero no se pudo separar la página del contrato. Súbela a mano en Documentos.'))
+    }
+  }
+
+  async function adjuntar(tipoId: number, archivo: File) {
+    setArchivosDoc((a) => ({ ...a, [tipoId]: { archivo, nombre: archivo.name, miniatura: null } }))
+    setF((x) => ({ ...x, documentos: { ...x.documentos, [tipoId]: 'completo' } }))
+    const mini = await miniatura(archivo)
+    setArchivosDoc((a) => (a[tipoId]?.archivo === archivo ? { ...a, [tipoId]: { ...a[tipoId], miniatura: mini } } : a))
+  }
+
+  function quitarArchivo(tipoId: number) {
+    setArchivosDoc((a) => { const n = { ...a }; delete n[tipoId]; return n })
+  }
+
+  function verArchivo(doc: ArchivoDoc) {
+    const url = URL.createObjectURL(doc.archivo)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
   }
 
   function validar(paso: number): string | null {
@@ -227,22 +254,26 @@ export default function VehiculoNuevo() {
       return
     }
 
-    const tipoContrato = tipos.find((t) => t.clave === 'contrato_compraventa')
-    let rutaContrato: string | null = null
-    if (archivoContrato && f.contratoPagina && tipoContrato) {
-      try {
-        const pdf = await extraerPagina(archivoContrato, f.contratoPagina)
-        const ruta = `${veh.id}/${tipoContrato.id}/${Date.now()}-contrato-compraventa.pdf`
-        const { error: errSubida } = await supabase.storage.from('documentos-vehiculo').upload(ruta, pdf, { contentType: 'application/pdf' })
-        if (errSubida) throw new Error(errSubida.message)
-        rutaContrato = ruta
-      } catch (e) {
-        await supabase.from('vehiculo').delete().eq('id', veh.id)
-        if (subastaCreada) await supabase.from('subasta').delete().eq('id', subastaCreada)
+    const rutas: Record<number, string> = {}
+    const deshacer = async () => {
+      const subidas = Object.values(rutas)
+      if (subidas.length) await supabase!.storage.from('documentos-vehiculo').remove(subidas)
+      await supabase!.from('vehiculo').delete().eq('id', veh.id)
+      if (subastaCreada) await supabase!.from('subasta').delete().eq('id', subastaCreada)
+    }
+    for (const [tipoId, doc] of Object.entries(archivosDoc)) {
+      const tipo = tipos.find((t) => t.id === Number(tipoId))
+      if (!tipo || estadoDoc(tipo) === 'no_aplica') continue
+      const nombreSeguro = doc.nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_')
+      const ruta = `${veh.id}/${tipoId}/${Date.now()}-${nombreSeguro}`
+      const { error: errSubida } = await supabase.storage.from('documentos-vehiculo').upload(ruta, doc.archivo, { contentType: doc.archivo.type || undefined })
+      if (errSubida) {
+        await deshacer()
         setGuardando(false)
-        setError(`No se pudo guardar el contrato, así que no se guardó nada: ${e instanceof Error ? e.message : String(e)}`)
+        setError(`No se pudo subir "${tipo.nombre}", así que no se guardó nada: ${errSubida.message}`)
         return
       }
+      rutas[Number(tipoId)] = ruta
     }
 
     const pasosGuardado: { nombre: string; correr: () => PromiseLike<{ error: { message: string } | null }> }[] = []
@@ -262,7 +293,7 @@ export default function VehiculoNuevo() {
       return {
         vehiculo_id: veh.id, tipo_documento_id: t.id, activo: e !== 'no_aplica',
         estado: e === 'no_aplica' ? 'faltante' : e, fecha_obtencion: e === 'completo' ? hoyISO() : null,
-        archivo_path: rutaContrato && t.id === tipoContrato?.id ? rutaContrato : null,
+        archivo_path: e !== 'no_aplica' ? (rutas[t.id] ?? null) : null,
       }
     })) })
 
@@ -270,9 +301,7 @@ export default function VehiculoNuevo() {
       const { error } = await p.correr()
       if (error) {
         // Deshacer: la cascada de vehiculo se lleva lo que ya se haya guardado.
-        if (rutaContrato) await supabase.storage.from('documentos-vehiculo').remove([rutaContrato])
-        await supabase.from('vehiculo').delete().eq('id', veh.id)
-        if (subastaCreada) await supabase.from('subasta').delete().eq('id', subastaCreada)
+        await deshacer()
         setGuardando(false)
         setError(`No se pudo guardar ${p.nombre}, así que no se guardó nada: ${error.message}`)
         return
@@ -358,9 +387,7 @@ export default function VehiculoNuevo() {
               <Campo label="Color"><input className="input" value={f.color} onChange={(e) => set('color', e.target.value)} /></Campo>
               <Campo label="Transmisión">
                 <select className="select" value={f.transmision} onChange={(e) => set('transmision', e.target.value)}>
-                  <option value="automatica">Automática</option>
-                  <option value="manual">Manual</option>
-                  <option value="otra">Otra</option>
+                  {Object.entries(TRANSMISION_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
               </Campo>
               <Campo label="Número de motor"><input className="input" value={f.numero_motor} onChange={(e) => set('numero_motor', e.target.value)} /></Campo>
@@ -422,32 +449,61 @@ export default function VehiculoNuevo() {
         {pasoActual === 4 && (
           <div className="form">
             <div className="card-titulo">Documentos</div>
-            <p className="card-sub" style={{ margin: 0 }}>Marca cómo están los papeles. Los archivos se suben después desde el expediente.</p>
+            <p className="card-sub" style={{ margin: 0 }}>Sube el archivo de cada papel que ya tengas (PDF o foto). Los que ya tienen archivo se marcan en verde.</p>
             <div className="tabla-wrap">
               <table className="tabla">
-                <thead><tr><th>Documento</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Documento</th><th>Estado</th><th>Archivo</th></tr></thead>
                 <tbody>
-                  {tipos.map((t) => (
-                    <tr key={t.id}>
-                      <td style={{ fontWeight: 500 }}>{t.nombre}</td>
-                      <td>
-                        <select className="select select-chico" value={estadoDoc(t)}
-                          onChange={(e) => set('documentos', { ...f.documentos, [t.id]: e.target.value as EstadoDoc })}>
-                          <option value="faltante">{ESTADO_DOCUMENTO.faltante.label}</option>
-                          <option value="en_tramite">{ESTADO_DOCUMENTO.en_tramite.label}</option>
-                          <option value="completo">{ESTADO_DOCUMENTO.completo.label}</option>
-                          <option value="no_aplica">No aplica a esta unidad</option>
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                  {tipos.length === 0 && <tr><td colSpan={2} className="vacio">No hay documentos en el catálogo (Configuración → Catálogos).</td></tr>}
+                  {tipos.map((t) => {
+                    const doc = archivosDoc[t.id]
+                    const noAplica = estadoDoc(t) === 'no_aplica'
+                    return (
+                      <tr key={t.id} className={doc && !noAplica ? 'doc-cargado' : noAplica ? 'inactivo' : ''}>
+                        <td style={{ fontWeight: 500 }}>
+                          {t.nombre}
+                          {doc && !noAplica && <span className="unidad-folio" style={{ color: 'var(--success)', fontWeight: 600 }}>Cargado ✓</span>}
+                        </td>
+                        <td>
+                          <select className="select select-chico" value={estadoDoc(t)}
+                            onChange={(e) => set('documentos', { ...f.documentos, [t.id]: e.target.value as EstadoDoc })}>
+                            <option value="faltante">{ESTADO_DOCUMENTO.faltante.label}</option>
+                            <option value="en_tramite">{ESTADO_DOCUMENTO.en_tramite.label}</option>
+                            <option value="completo">{ESTADO_DOCUMENTO.completo.label}</option>
+                            <option value="no_aplica">No aplica a esta unidad</option>
+                          </select>
+                        </td>
+                        <td>
+                          {noAplica ? <span className="texto-muted">—</span> : doc ? (
+                            <div className="doc-archivo">
+                              <button type="button" className="miniatura" title="Ver documento" onClick={() => verArchivo(doc)}>
+                                {doc.miniatura ? <img src={doc.miniatura} alt={t.nombre} /> : 'Ver'}
+                              </button>
+                              <div style={{ minWidth: 0 }}>
+                                <div className="texto-suave" style={{ fontSize: 13, wordBreak: 'break-all' }}>{doc.nombre}</div>
+                                <button type="button" className="btn-link peligro" style={{ paddingLeft: 0 }} onClick={() => quitarArchivo(t.id)}>Quitar</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <label className="btn btn-secundario btn-chico" style={{ cursor: 'pointer' }}>
+                              Subir archivo
+                              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp" style={{ display: 'none' }}
+                                onChange={(e) => { const a = e.target.files?.[0]; if (a) adjuntar(t.id, a); e.target.value = '' }} />
+                            </label>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {tipos.length === 0 && <tr><td colSpan={3} className="vacio">No hay documentos en el catálogo (Configuración → Catálogos).</td></tr>}
                 </tbody>
               </table>
             </div>
+            {Object.keys(archivosDoc).length === 0 && f.contratoPagina && (
+              <Alerta tipo="aviso">Se recargó la página y los archivos se perdieron: vuelve a subir el contrato en el paso 1 o adjúntalo aquí.</Alerta>
+            )}
             <div className="card-titulo" style={{ marginTop: 8 }}>Precio de venta</div>
             <div className="form-grid">
-              <Campo label="Precio autorizado (esperado)" ayuda="Se puede ajustar después en En venta">
+              <Campo label="Precio estimado de venta" ayuda="Se puede ajustar después en En venta">
                 <input className="input" type="number" min={0} value={f.precio_autorizado} onChange={(e) => set('precio_autorizado', e.target.value)} />
               </Campo>
               {esAdmin && (
@@ -467,14 +523,14 @@ export default function VehiculoNuevo() {
               <Dato label="Folio" valor="Se asigna al guardar" />
               {esAdmin && <Dato label="Subasta" valor={f.subastaId === NUEVA ? `${f.nuevaPlataforma} · ${fecha(f.nuevaFecha)} (nueva)` : subastaElegida ? `${subastaElegida.plataforma} · ${fecha(subastaElegida.fecha)}` : 'Sin subasta'} />}
               <Dato label="Fecha de compra" valor={fecha(f.fecha_compra)} />
-              {f.contratoPagina && <Dato label="Contrato" valor={archivoContrato ? 'Se adjunta al guardar' : 'Falta volver a subirlo'} />}
+              <Dato label="Archivos a subir" valor={String(Object.keys(archivosDoc).length)} />
             </div>
             {esAdmin && (
               <div className="totales">
                 <Dato label="Compra" valor={mxn(costoCompra)} />
                 <Dato label={`Gastos (${f.gastos.length})`} valor={mxn(totalGastos)} />
                 <Dato label="Costo total" valor={mxn(costoTotal)} />
-                <Dato label="Precio autorizado" valor={precioVenta ? mxn(precioVenta) : '—'} />
+                <Dato label="Precio estimado de venta" valor={precioVenta ? mxn(precioVenta) : '—'} />
                 <Dato label="Utilidad proyectada" valor={<span style={{ color: utilidad !== null && utilidad < 0 ? 'var(--danger)' : undefined }}>{utilidad !== null ? mxn(utilidad) : '—'}</span>} />
                 <Dato label="Margen" valor={margen !== null ? porcentaje(margen) : '—'} />
               </div>

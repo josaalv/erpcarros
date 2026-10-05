@@ -118,7 +118,7 @@ export const ESQUEMA_COMISION_LABEL: Record<string, string> = {
 }
 
 export const TRANSMISION_LABEL: Record<string, string> = {
-  manual: 'Manual',
+  manual: 'Manual (estándar)',
   automatica: 'Automática',
   otra: 'Otra',
 }

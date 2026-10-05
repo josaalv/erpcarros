@@ -203,6 +203,16 @@ final en orden; si falla un paso después de crear el vehículo se borra (la
 cascada limpia) y la subasta recién creada también. Gerencia solo ve
 Unidad, Documentos y Resumen (compra/gasto/aportación/subasta son admin).
 La carga por Excel queda para después (pedido del usuario).
+En "Documentos y precio" cada documento sube su archivo (el contrato del
+PDF ya llega adjunto): fila verde + miniatura (`src/lib/miniatura.ts`,
+pdf.js para PDF). **pdf.js se importa desde `pdfjs-dist/legacy/...`**: la
+versión normal (6.x) usa `Map.getOrInsertComputed`/`Math.sumPrecise`, que
+muchos navegadores todavía no tienen, y el render fallaba.
+
+**Editar datos de una unidad ya dada de alta**: botón "Editar datos" en el
+Resumen del Expediente (`EditarDatosModal`, admin/gerencia): marca,
+modelo, versión, año, VIN, motor, km de llegada, color, transmisión, fecha
+de compra, torre, stock, notas y (solo admin) la subasta.
 
 **Configuración** (`src/screens/Configuracion.tsx`, admin): pestañas
 General (parámetros), Catálogos (etapas, ubicaciones, categorías de gasto,
