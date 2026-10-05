@@ -8,12 +8,15 @@ import {
   ESTADO_COMERCIAL, ESTADO_DOCUMENTAL, ESTADO_DOCUMENTO, TRANSMISION_LABEL,
 } from '../lib/helpers'
 import { useBorrador } from '../lib/useBorrador'
+import { BUCKET_DOCUMENTOS, abrirArchivo, quitarArchivos, subirArchivo } from '../lib/archivos'
+import { miniatura } from '../lib/miniatura'
+import { Bitacora } from '../components/Bitacora'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, Dato, EtiquetaBadge, Seccion } from '../components/Ui'
-import type { VehiculoFicha, Gasto, TipoDocumento, Documento, Aportacion, Socio, CategoriaGasto } from '../types'
+import type { VehiculoFicha, Gasto, Proveedor, TipoDocumento, Documento, Aportacion, Socio, CategoriaGasto } from '../types'
 
 interface Compra { id: number; vehiculo_id: number; precio: number; comision: number; impuestos: number; iva: number }
 
-type Pestana = 'resumen' | 'costos' | 'documentos' | 'publicacion' | 'socios'
+type Pestana = 'resumen' | 'costos' | 'documentos' | 'publicacion' | 'socios' | 'historial'
 
 export default function Expediente() {
   const { id } = useParams()
@@ -73,6 +76,7 @@ export default function Expediente() {
     { clave: 'documentos', label: 'Documentación', visible: true },
     { clave: 'publicacion', label: 'Publicación', visible: esAdminOGerencia },
     { clave: 'socios', label: 'Socios', visible: esAdmin },
+    { clave: 'historial', label: 'Historial', visible: esAdmin },
   ]
   const visibles = pestanas.filter((p) => p.visible)
   const pedida = params.get('tab') as Pestana | null
@@ -169,13 +173,14 @@ export default function Expediente() {
           {esAdminOGerencia && <EstadoEditor key={veh.id} veh={veh} onGuardado={recargar} />}
 
           {esAdmin && (
-            <EliminarUnidad veh={veh} documentos={documentos} onEliminada={() => navigate('/inventario')} />
+            <EliminarUnidad veh={veh} documentos={documentos} gastos={gastos} onEliminada={() => navigate('/inventario')} />
           )}
         </>
       )}
 
       {pestana === 'costos' && esAdmin && (
         <>
+          <ComparativoEvaluacion vehiculoId={veh.id} compra={compra} gastos={gastos} precioAutorizado={veh.precio_autorizado} />
           <CompraForm key={`compra-${veh.id}`} vehiculoId={veh.id} compra={compra} onGuardado={recargar} />
           <Gastos vehiculoId={veh.id} gastos={gastos} categorias={categorias} onCambio={recargar} />
         </>
@@ -197,6 +202,8 @@ export default function Expediente() {
           <PublicacionForm veh={veh} onGuardado={recargar} />
         </>
       )}
+
+      {pestana === 'historial' && esAdmin && <Bitacora vehiculoId={veh.id} />}
 
       {pestana === 'socios' && esAdmin && (
         <CapitalSocios vehiculoId={veh.id} aportaciones={aportaciones} socios={socios} onCambio={recargar} />
@@ -361,9 +368,7 @@ function EstadoEditor({ veh, onGuardado }: { veh: VehiculoFicha; onGuardado: () 
   )
 }
 
-const BUCKET_DOCUMENTOS = 'documentos-vehiculo'
-
-function EliminarUnidad({ veh, documentos, onEliminada }: { veh: VehiculoFicha; documentos: Documento[]; onEliminada: () => void }) {
+function EliminarUnidad({ veh, documentos, gastos, onEliminada }: { veh: VehiculoFicha; documentos: Documento[]; gastos: Gasto[]; onEliminada: () => void }) {
   const [abrir, setAbrir] = useState(false)
   const [confirmacion, setConfirmacion] = useState('')
   const [eliminando, setEliminando] = useState(false)
@@ -374,8 +379,7 @@ function EliminarUnidad({ veh, documentos, onEliminada }: { veh: VehiculoFicha; 
     setEliminando(true)
     setError(null)
     // Storage primero: Postgres no conoce los archivos y la cascada no los borra.
-    const rutas = documentos.map((d) => d.archivo_path).filter((p): p is string => Boolean(p))
-    if (rutas.length > 0) await supabase.storage.from(BUCKET_DOCUMENTOS).remove(rutas)
+    await quitarArchivos([...documentos.map((d) => d.archivo_path), ...gastos.map((g) => g.comprobante_path)])
     const { error: errBorrar } = await supabase.from('vehiculo').delete().eq('id', veh.id)
     setEliminando(false)
     if (errBorrar) { setError(errBorrar.message); return }
@@ -478,6 +482,63 @@ function CompraForm({ vehiculoId, compra, onGuardado }: { vehiculoId: number; co
   )
 }
 
+interface EvaluacionCompra {
+  costo_reparacion_estimado: number | null
+  precio_venta_esperado: number | null
+  techo_puja: number | null
+}
+
+/**
+ * Lo que se calculó al evaluar la compra (Posibles ofertas) contra lo que va
+ * pasando de verdad. Es lo que permite afinar la puja de las siguientes
+ * subastas con números propios. Solo aparece si la unidad vino de "Adquirir".
+ */
+function ComparativoEvaluacion({ vehiculoId, compra, gastos, precioAutorizado }: {
+  vehiculoId: number; compra: Compra | null; gastos: Gasto[]; precioAutorizado: number | null
+}) {
+  const [ev, setEv] = useState<EvaluacionCompra | null>(null)
+  useEffect(() => {
+    supabase?.from('evaluacion_puja').select('costo_reparacion_estimado, precio_venta_esperado, techo_puja')
+      .eq('vehiculo_id', vehiculoId).limit(1).maybeSingle()
+      .then(({ data }) => setEv(data as EvaluacionCompra | null))
+  }, [vehiculoId])
+  if (!ev) return null
+
+  const gastado = gastos.reduce((a, g) => a + g.importe, 0)
+  const filas: { concepto: string; estimado: number | null; real: number | null; mejorSiMenor: boolean }[] = [
+    { concepto: 'Reparación', estimado: ev.costo_reparacion_estimado, real: gastado, mejorSiMenor: true },
+    { concepto: 'Precio de compra (martillo)', estimado: ev.techo_puja, real: compra?.precio ?? null, mejorSiMenor: true },
+    { concepto: 'Precio de venta', estimado: ev.precio_venta_esperado, real: precioAutorizado, mejorSiMenor: false },
+  ]
+  return (
+    <div className="card">
+      <div className="card-titulo">Estimado al comprar contra real</div>
+      <p className="card-sub">Lo que se calculó en Posibles ofertas. En compra se compara contra el techo de puja; en venta, contra el precio autorizado actual.</p>
+      <div className="tabla-wrap">
+        <table className="tabla">
+          <thead><tr><th>Concepto</th><th className="num">Estimado</th><th className="num">Real</th><th className="num">Diferencia</th></tr></thead>
+          <tbody>
+            {filas.map((f) => {
+              const dif = f.estimado !== null && f.real !== null ? f.real - f.estimado : null
+              const bien = dif === null ? null : f.mejorSiMenor ? dif <= 0 : dif >= 0
+              return (
+                <tr key={f.concepto}>
+                  <td>{f.concepto}</td>
+                  <td className="num">{mxn(f.estimado)}</td>
+                  <td className="num">{mxn(f.real)}</td>
+                  <td className={`num ${bien === null ? '' : bien ? 'texto-ok' : 'texto-peligro'}`}>
+                    {dif === null ? '—' : `${dif > 0 ? '+' : dif < 0 ? '−' : ''}${mxn(Math.abs(dif))}`}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
   vehiculoId: number
   gastos: Gasto[]
@@ -487,35 +548,56 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
   const [abrirNuevo, setAbrirNuevo] = useState(false)
   const [editando, setEditando] = useState<Gasto | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [proveedores, setProveedores] = useState<Proveedor[]>([])
   const total = gastos.reduce((acc, g) => acc + g.importe, 0)
+  const sinComprobante = gastos.filter((g) => !g.comprobante_path).length
   const nombreCategoria = (catId: number) => categorias.find((c) => c.id === catId)?.nombre ?? '—'
+  const nombreProveedor = (id: number | null) => (id === null ? '—' : proveedores.find((p) => p.id === id)?.nombre ?? '—')
+
+  useEffect(() => {
+    supabase?.from('proveedor').select('id, nombre, activo').order('nombre')
+      .then(({ data }) => setProveedores((data ?? []) as Proveedor[]))
+  }, [])
 
   async function eliminar(g: Gasto) {
     if (!supabase || !window.confirm(`¿Eliminar el gasto "${g.descripcion}" por ${mxn(g.importe)}?`)) return
     setError(null)
     const { error } = await supabase.from('gasto').delete().eq('id', g.id)
     if (error) { setError(error.message); return }
+    await quitarArchivos([g.comprobante_path])
     onCambio()
+  }
+
+  async function ver(g: Gasto) {
+    if (!g.comprobante_path) return
+    const err = await abrirArchivo(g.comprobante_path)
+    if (err) setError(`No se pudo abrir el comprobante: ${err}`)
   }
 
   return (
     <Seccion
       titulo="Gastos"
-      descripcion={`${gastos.length} gastos · total ${mxn(total)}`}
+      descripcion={`${gastos.length} gastos · total ${mxn(total)}${sinComprobante > 0 ? ` · ${sinComprobante} sin comprobante` : ''}`}
       acciones={<button className="btn btn-primario" onClick={() => setAbrirNuevo(true)}>+ Registrar gasto</button>}
     >
       {error && <div style={{ marginBottom: 12 }}><Alerta>{error}</Alerta></div>}
       <div className="tabla-wrap">
         <table className="tabla">
           <thead>
-            <tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th className="num">Importe</th><th></th></tr>
+            <tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th>Proveedor</th><th>Comprobante</th><th className="num">Importe</th><th></th></tr>
           </thead>
           <tbody>
             {gastos.map((g) => (
               <tr key={g.id}>
-                <td style={{ whiteSpace: 'nowrap' }}>{fecha(g.fecha)}</td>
+                <td className="nowrap">{fecha(g.fecha)}</td>
                 <td>{g.descripcion}</td>
                 <td className="texto-suave">{nombreCategoria(g.categoria_id)}</td>
+                <td className="texto-suave">{nombreProveedor(g.proveedor_id)}</td>
+                <td>
+                  {g.comprobante_path
+                    ? <button className="btn-link" onClick={() => ver(g)}>Ver ✓</button>
+                    : <span className="texto-aviso">Falta</span>}
+                </td>
                 <td className="num">{mxn(g.importe)}</td>
                 <td className="acciones-celda">
                   <button className="btn-link" onClick={() => setEditando(g)}>Editar</button>
@@ -523,7 +605,7 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
                 </td>
               </tr>
             ))}
-            {gastos.length === 0 && <tr><td colSpan={5} className="vacio">Sin gastos registrados todavía.</td></tr>}
+            {gastos.length === 0 && <tr><td colSpan={7} className="vacio">Sin gastos registrados todavía.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -533,6 +615,7 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
           vehiculoId={vehiculoId}
           gasto={editando}
           categorias={categorias}
+          proveedores={proveedores}
           onClose={() => { setAbrirNuevo(false); setEditando(null) }}
           onGuardado={() => { setAbrirNuevo(false); setEditando(null); onCambio() }}
         />
@@ -541,58 +624,113 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
   )
 }
 
-function GastoModal({ vehiculoId, gasto, categorias, onClose, onGuardado }: {
+function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGuardado }: {
   vehiculoId: number
   gasto: Gasto | null
   categorias: CategoriaGasto[]
+  proveedores: Proveedor[]
   onClose: () => void
   onGuardado: () => void
 }) {
   const [form, setForm, limpiarBorrador] = useBorrador(`borrador:gasto:${vehiculoId}:${gasto?.id ?? 'nuevo'}`, {
     descripcion: gasto?.descripcion ?? '',
     categoriaId: gasto ? String(gasto.categoria_id) : '',
+    proveedorId: gasto?.proveedor_id ? String(gasto.proveedor_id) : '',
     importe: gasto ? String(gasto.importe) : '',
     fecha: gasto?.fecha ?? hoyISO(),
   })
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
+  // El archivo no cabe en el borrador de localStorage: se elige al final.
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const [vista, setVista] = useState<string | null>(null)
+  const [quitarActual, setQuitarActual] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const tieneActual = Boolean(gasto?.comprobante_path) && !quitarActual
+
+  async function elegir(f: File | null) {
+    setArchivo(f)
+    setVista(f ? await miniatura(f) : null)
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     if (!supabase) return
     setGuardando(true)
     setError(null)
+    let rutaNueva: string | null = null
+    if (archivo) {
+      try {
+        rutaNueva = await subirArchivo(vehiculoId, 'gastos', archivo, archivo.name)
+      } catch (err) {
+        setGuardando(false)
+        setError((err as Error).message)
+        return
+      }
+    }
+    const anterior = gasto?.comprobante_path ?? null
+    const ruta = rutaNueva ?? (quitarActual ? null : anterior)
     const datos = {
       vehiculo_id: vehiculoId,
       categoria_id: Number(form.categoriaId),
+      proveedor_id: form.proveedorId ? Number(form.proveedorId) : null,
       descripcion: form.descripcion.trim(),
       importe: Number(form.importe),
       fecha: form.fecha,
+      comprobante_path: ruta,
     }
     const { error } = gasto
       ? await supabase.from('gasto').update(datos).eq('id', gasto.id)
       : await supabase.from('gasto').insert({ ...datos, pagador_tipo: 'empresa' })
+    if (error) {
+      await quitarArchivos([rutaNueva])  // no dejar un archivo suelto en Storage
+      setGuardando(false)
+      setError(error.message)
+      return
+    }
+    if (anterior && anterior !== ruta) await quitarArchivos([anterior])
     setGuardando(false)
-    if (error) { setError(error.message); return }
     limpiarBorrador()
     onGuardado()
   }
 
   return (
-    <Modal titulo={gasto ? 'Editar gasto' : 'Registrar gasto'} onClose={onClose}>
+    <Modal titulo={gasto ? 'Editar gasto' : 'Registrar gasto'} ancho={560} onClose={onClose}>
       <form onSubmit={onSubmit} className="form">
         <Campo label="Descripción"><input className="input" required value={form.descripcion} onChange={(e) => set('descripcion', e.target.value)} autoFocus /></Campo>
-        <Campo label="Categoría">
-          <select className="select" required value={form.categoriaId} onChange={(e) => set('categoriaId', e.target.value)}>
-            <option value="">Elige una categoría…</option>
-            {categorias.filter((c) => c.activo || String(c.id) === form.categoriaId).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-          </select>
-        </Campo>
         <div className="form-grid">
+          <Campo label="Categoría">
+            <select className="select" required value={form.categoriaId} onChange={(e) => set('categoriaId', e.target.value)}>
+              <option value="">Elige una categoría…</option>
+              {categorias.filter((c) => c.activo || String(c.id) === form.categoriaId).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Proveedor">
+            <select className="select" value={form.proveedorId} onChange={(e) => set('proveedorId', e.target.value)}>
+              <option value="">Sin proveedor</option>
+              {proveedores.filter((p) => p.activo || String(p.id) === form.proveedorId).map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+          </Campo>
           <Campo label="Importe"><input className="input" required type="number" step="0.01" min={0} value={form.importe} onChange={(e) => set('importe', e.target.value)} /></Campo>
           <Campo label="Fecha"><input className="input" required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} /></Campo>
         </div>
+        <Campo label="Comprobante (foto del ticket o factura)">
+          {archivo ? (
+            <div className="doc-archivo">
+              {vista ? <img className="miniatura" src={vista} alt="" /> : <span className="miniatura">PDF</span>}
+              <span>{archivo.name}</span>
+              <button type="button" className="btn-link peligro" onClick={() => elegir(null)}>Quitar</button>
+            </div>
+          ) : tieneActual ? (
+            <div className="doc-archivo">
+              <button type="button" className="btn-link" onClick={() => abrirArchivo(gasto!.comprobante_path!)}>Ver comprobante actual</button>
+              <button type="button" className="btn-link peligro" onClick={() => setQuitarActual(true)}>Quitar</button>
+              <label className="btn-link">Reemplazar<input type="file" hidden accept="image/*,application/pdf" onChange={(e) => elegir(e.target.files?.[0] ?? null)} /></label>
+            </div>
+          ) : (
+            <input className="input" type="file" accept="image/*,application/pdf" capture="environment" onChange={(e) => elegir(e.target.files?.[0] ?? null)} />
+          )}
+        </Campo>
         {error && <Alerta>{error}</Alerta>}
         <FormBotones onClose={onClose} guardando={guardando} />
       </form>
@@ -638,23 +776,26 @@ function DocumentoChecklist({ vehiculoId, tiposDocumento, documentos, puedeEdita
     onCambio()
   }
 
-  async function subirArchivo(tipo: TipoDocumento, archivo: File) {
+  async function subirDocumento(tipo: TipoDocumento, archivo: File) {
     if (!supabase) return
     setError(null)
     setOcupadoId(tipo.id)
-    const nombreSeguro = archivo.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_')
-    const ruta = `${vehiculoId}/${tipo.id}/${Date.now()}-${nombreSeguro}`
-    const { error: errSubida } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(ruta, archivo)
+    let ruta: string
+    try {
+      ruta = await subirArchivo(vehiculoId, String(tipo.id), archivo, archivo.name)
+    } catch (err) {
+      setOcupadoId(null)
+      setError((err as Error).message)
+      return
+    }
     setOcupadoId(null)
-    if (errSubida) { setError(`No se pudo subir el archivo: ${errSubida.message}`); return }
     await actualizarDocumento(tipo, { estado: 'completo', archivo_path: ruta, fecha_obtencion: hoyISO() })
   }
 
   async function verArchivo(doc: Documento) {
     if (!supabase || !doc.archivo_path) return
-    const { data, error: errUrl } = await supabase.storage.from(BUCKET_DOCUMENTOS).createSignedUrl(doc.archivo_path, 120)
-    if (errUrl || !data) { setError('No se pudo abrir el archivo.'); return }
-    window.open(data.signedUrl, '_blank')
+    const err = await abrirArchivo(doc.archivo_path)
+    if (err) setError(`No se pudo abrir el archivo: ${err}`)
   }
 
   async function quitarArchivo(tipo: TipoDocumento, doc: Documento) {
@@ -776,7 +917,7 @@ function DocumentoChecklist({ vehiculoId, tiposDocumento, documentos, puedeEdita
                       <label className="btn btn-secundario btn-chico" style={{ cursor: ocupado ? 'default' : 'pointer' }}>
                         {ocupado ? 'Subiendo…' : 'Subir archivo'}
                         <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp" disabled={ocupado} style={{ display: 'none' }}
-                          onChange={(e) => { const f = e.target.files?.[0]; if (f) subirArchivo(tipo, f); e.target.value = '' }} />
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) subirDocumento(tipo, f); e.target.value = '' }} />
                       </label>
                     ) : <span className="texto-muted">—</span>}
                   </td>

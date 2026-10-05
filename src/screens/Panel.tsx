@@ -4,13 +4,15 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useCatalogos } from '../lib/catalogos'
 import { mxn, diasDesde, etiqueta, ESTADO_COMERCIAL } from '../lib/helpers'
-import { PageHeader, Kpi, Alerta, Cargando, EtiquetaBadge, Seccion } from '../components/Ui'
+import { PageHeader, Kpi, Alerta, Cargando, EtiquetaBadge, Seccion, DiasBadge } from '../components/Ui'
+import { useParametros } from '../lib/parametros'
 import type { VehiculoFicha } from '../types'
 
 export default function Panel() {
   const { perfil } = useAuth()
   const navigate = useNavigate()
   const { estados } = useCatalogos()
+  const { dias_alerta, dias_critico } = useParametros()
   const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -39,6 +41,8 @@ export default function Panel() {
   const enVenta = vehiculos.length - enPreparacion
   const nombreEstado = (id: number) => estados.find((e) => e.id === id)?.nombre ?? '—'
 
+  const criticas = vehiculos.filter((v) => (diasDesde(v.fecha_compra) ?? 0) >= dias_critico).length
+  const enAlerta = vehiculos.filter((v) => { const d = diasDesde(v.fecha_compra) ?? 0; return d >= dias_alerta && d < dias_critico }).length
   const ordenados = [...vehiculos].sort((a, b) => (diasDesde(b.fecha_compra) ?? -1) - (diasDesde(a.fecha_compra) ?? -1))
 
   return (
@@ -54,6 +58,7 @@ export default function Panel() {
         <Kpi label="Unidades activas" valor={String(vehiculos.length)} />
         <Kpi label="En preparación" valor={String(enPreparacion)} nota="Compradas, en traslado o en taller" />
         <Kpi label="Listas para vender" valor={String(enVenta)} />
+        <Kpi label="Atrasadas" valor={String(criticas + enAlerta)} nota={`${criticas} en rojo (${dias_critico}+ días) · ${enAlerta} en amarillo (${dias_alerta}+)`} />
         {veCifras && <Kpi label="Capital invertido" valor={mxn(capital)} nota="Compra + gastos de las unidades activas" />}
         {veCifras && <Kpi label="Utilidad proyectada" valor={mxn(utilidad)} nota="Contra el precio autorizado" />}
       </div>
@@ -81,7 +86,7 @@ export default function Panel() {
                   </td>
                   <td className="texto-suave">{nombreEstado(v.estado_proceso_id)}</td>
                   <td><EtiquetaBadge etiqueta={etiqueta(ESTADO_COMERCIAL, v.estado_comercial)} /></td>
-                  <td className="num">{diasDesde(v.fecha_compra) ?? '—'}</td>
+                  <td className="num"><DiasBadge dias={diasDesde(v.fecha_compra)} /></td>
                   <td className="num">{mxn(v.precio_autorizado)}</td>
                   {veCifras && <td className="num">{mxn(v.costo_total)}</td>}
                   {veCifras && <td className="num">{mxn(v.utilidad)}</td>}

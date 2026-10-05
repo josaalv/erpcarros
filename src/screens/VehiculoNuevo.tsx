@@ -55,7 +55,7 @@ export default function VehiculoNuevo() {
   const [f, setF, limpiarBorrador] = useBorrador<Formulario>('borrador:alta-unidad', {
     paso: 0,
     id_interno: '', vin: '', marca: '', modelo: '', version: '', anio: String(new Date().getFullYear()),
-    kilometraje: '', color: '', transmision: 'automatica',
+    kilometraje: '', color: '', transmision: '',
     numero_motor: '', stock_subasta: '', notas: '', contratoPagina: null, contratoArchivo: '',
     subastaId: '', nuevaPlataforma: 'Prosubastas', nuevaFecha: hoyISO(), nuevoLote: '', nuevoPatio: '',
     torre: '', fecha_compra: hoyISO(), precio_martillo: '', comision: String(comision_subasta),
@@ -181,6 +181,7 @@ export default function VehiculoNuevo() {
   function validar(paso: number): string | null {
     if (paso === 0) {
       if (!f.marca.trim() || !f.modelo.trim() || !f.anio) return 'Falta marca, modelo o año.'
+      if (!f.transmision) return 'Elige la transmisión (el contrato no siempre la dice).'
     }
     if (paso === 1) {
       if (f.subastaId === NUEVA && (!f.nuevaPlataforma.trim() || !f.nuevaFecha)) return 'Falta plataforma o fecha de la subasta nueva.'
@@ -387,6 +388,7 @@ export default function VehiculoNuevo() {
               <Campo label="Color"><input className="input" value={f.color} onChange={(e) => set('color', e.target.value)} /></Campo>
               <Campo label="Transmisión">
                 <select className="select" value={f.transmision} onChange={(e) => set('transmision', e.target.value)}>
+                  <option value="">Elige…</option>
                   {Object.entries(TRANSMISION_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
               </Campo>
