@@ -276,3 +276,14 @@ details.plegable summary { cursor: pointer; color: var(--text-soft); font-weight
 /* Tabla larga dentro de un modal: se desplaza sin estirar la ventana */
 .tabla-alta { max-height: 38vh; overflow-y: auto; }
 .tabla-alta thead th { position: sticky; top: 0; z-index: 1; }
+
+/* Galería de fotos (Dropbox y Expediente) */
+.galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.galeria-foto { aspect-ratio: 3 / 2; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); padding: 0; overflow: hidden; cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative; }
+.galeria-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.galeria-foto:hover { border-color: var(--primary); }
+.fotos-acciones { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.galeria-foto a { display: block; width: 100%; height: 100%; }
+.galeria-portada { position: absolute; top: 6px; left: 6px; background: var(--primary); color: #fff; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.galeria-botones { position: absolute; bottom: 6px; right: 6px; display: flex; gap: 4px; background: rgba(255, 255, 255, 0.92); border-radius: 8px; padding: 2px 4px; }
+.btn.deshabilitado { opacity: 0.6; pointer-events: none; }

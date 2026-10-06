@@ -6,6 +6,7 @@ import { fecha, ROL_LABEL } from '../lib/helpers'
 import { PageHeader, Campo, Alerta, Modal, Cargando } from '../components/Ui'
 import { TablaEditable } from '../components/TablaEditable'
 import Usuarios from './Usuarios'
+import { conectarDropbox, desconectarDropbox, dropboxConectado } from '../lib/dropbox'
 import { Bitacora } from '../components/Bitacora'
 
 type Pestana = 'general' | 'catalogos' | 'personas' | 'usuarios' | 'historial' | 'datos'
@@ -42,7 +43,7 @@ export default function Configuracion() {
         ))}
       </div>
 
-      {pestana === 'general' && <General />}
+      {pestana === 'general' && <><General /><ConexionDropbox /></>}
       {pestana === 'catalogos' && <Catalogos />}
       {pestana === 'personas' && <Personas />}
       {pestana === 'usuarios' && <Usuarios />}
@@ -115,6 +116,64 @@ function General() {
         </div>
       </div>
     </form>
+  )
+}
+
+/* ── Dropbox ───────────────────────────────────────────────────────── */
+
+/**
+ * Conexión de ESTE navegador con Dropbox para traer fotos, hoja de
+ * inspección y REPUVE de las subastas. La App key es pública (OAuth PKCE,
+ * sin secreto) y se guarda como parámetro; el permiso queda en el navegador.
+ */
+function ConexionDropbox() {
+  const { dropbox_app_key } = useParametros()
+  const [clave, setClave] = useState(dropbox_app_key)
+  const [cargada, setCargada] = useState(dropbox_app_key)
+  if (cargada !== dropbox_app_key) { setCargada(dropbox_app_key); setClave(dropbox_app_key) }
+  const [conectado, setConectado] = useState(dropboxConectado())
+  const [error, setError] = useState<string | null>(() => {
+    const e = sessionStorage.getItem('dropbox:error')
+    sessionStorage.removeItem('dropbox:error')
+    return e
+  })
+  const [guardando, setGuardando] = useState(false)
+
+  async function conectar() {
+    if (!supabase) return
+    const k = clave.trim()
+    if (!k) { setError('Escribe la App key de tu app de Dropbox.'); return }
+    setGuardando(true)
+    setError(null)
+    if (k !== dropbox_app_key) {
+      const { error: err } = await supabase.from('parametro').upsert({ clave: 'dropbox_app_key', valor: k, actualizado: new Date().toISOString() })
+      if (err) { setGuardando(false); setError(err.message); return }
+      await recargarParametros()
+    }
+    await conectarDropbox(k)  // sale a Dropbox y regresa aquí
+  }
+
+  return (
+    <div className="card" style={{ maxWidth: 760 }}>
+      <div className="card-titulo">Dropbox (fotos de las subastas)</div>
+      <p className="card-sub">
+        Permite ver en Posibles ofertas las fotos, la hoja de inspección y el REPUVE de cada unidad directo desde la carpeta
+        compartida de la subasta, y copiarlas a la unidad al adquirirla. La conexión es por navegador.
+      </p>
+      <div className="form">
+        <Campo label="App key de Dropbox" ayuda="De tu app en dropbox.com/developers/apps (no es secreta).">
+          <input className="input" value={clave} onChange={(e) => setClave(e.target.value)} placeholder="p. ej. a1b2c3d4e5f6g7h" />
+        </Campo>
+        {error && <Alerta>{error}</Alerta>}
+        <div className="form-acciones" style={{ alignItems: 'center' }}>
+          {conectado && <span className="ok-inline">Conectado en este navegador ✓</span>}
+          {conectado && <button type="button" className="btn btn-secundario" onClick={() => { desconectarDropbox(); setConectado(false) }}>Desconectar</button>}
+          <button type="button" className="btn btn-primario" onClick={conectar} disabled={guardando}>
+            {guardando ? 'Abriendo Dropbox…' : conectado ? 'Volver a conectar' : 'Conectar Dropbox'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

@@ -9,6 +9,8 @@ export interface Parametros {
   /** Días en inventario a partir de los cuales una unidad se marca en amarillo / rojo. */
   dias_alerta: number
   dias_critico: number
+  /** App key de la app de Dropbox (pública; sin secreto: OAuth PKCE). */
+  dropbox_app_key: string
 }
 
 export const PARAMETROS_DEFAULT: Parametros = {
@@ -18,6 +20,7 @@ export const PARAMETROS_DEFAULT: Parametros = {
   dias_atribucion_referido: 15,
   dias_alerta: 30,
   dias_critico: 45,
+  dropbox_app_key: '',
 }
 
 let cache: Parametros | null = null
@@ -27,6 +30,7 @@ function convertir(filas: { clave: string; valor: string }[]): Parametros {
   const p = { ...PARAMETROS_DEFAULT }
   for (const { clave, valor } of filas) {
     if (clave === 'empresa_nombre') p.empresa_nombre = valor
+    else if (clave === 'dropbox_app_key') p.dropbox_app_key = valor
     else if (clave in p) {
       const n = Number(valor)
       if (Number.isFinite(n)) (p as unknown as Record<string, number>)[clave] = n
