@@ -318,6 +318,47 @@ export interface Subasta {
   patio_origen: string | null
   /** Carpeta compartida de Dropbox con las fotos de la subasta. */
   enlace_fotos: string | null
+  /** Carpeta de Prosubastas de donde se importaron los listados. */
+  url_origen: string | null
+}
+
+/** PDF de una empresa vendedora dentro de una subasta (01.-FC = Ford Credit…). */
+export interface SubastaListado {
+  id: number
+  subasta_id: number
+  orden: string | null
+  codigo: string
+  vendedor: string | null
+  url: string | null
+  fecha_reporte: string | null
+  unidades: number
+  carpeta_fotos: string | null
+}
+
+/** Unidad del catálogo histórico: cada renglón de un listado, nos interese o no. */
+export interface SubastaUnidad {
+  id: number
+  subasta_id: number
+  listado_id: number | null
+  torre: string
+  stock: string | null
+  vin: string | null
+  marca: string
+  modelo: string
+  anio: number | null
+  version: string | null
+  puertas: number | null
+  color: string | null
+  kilometraje: number | null
+  equipamiento: string | null
+  transmision: string | null
+  vendedor: string | null
+  valor_factura: number | null
+  fecha_factura: string | null
+  info_documentos: string | null
+  carpeta_fotos: string | null
+  fotos_total: number | null
+  precio_cierre: number | null
 }
 
 export interface EvaluacionPuja {
@@ -349,6 +390,7 @@ export interface EvaluacionPuja {
   valor_factura: number | null
   fecha_factura: string | null
   info_documentos: string | null
+  subasta_unidad_id: number | null
 }
 
 export interface RoiSegmento {

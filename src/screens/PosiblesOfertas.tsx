@@ -6,7 +6,6 @@ import { useBorrador } from '../lib/useBorrador'
 import { useParametros } from '../lib/parametros'
 import { mxn, porcentaje, fecha, km, hoyISO, numeroONull, etiqueta, RESULTADO_EVALUACION, TRANSMISION_LABEL } from '../lib/helpers'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, EtiquetaBadge } from '../components/Ui'
-import { CargaListadoModal } from '../components/CargaListado'
 import { FotosDropboxModal } from '../components/FotosDropbox'
 import { ExploradorDropbox } from '../components/ExploradorDropbox'
 import { copiarDeDropbox } from '../lib/dropboxUnidad'
@@ -28,7 +27,6 @@ export default function PosiblesOfertas() {
   const [subastaModal, setSubastaModal] = useState<Subasta | 'nueva' | null>(null)
   const [evaluacionModal, setEvaluacionModal] = useState<EvaluacionPuja | 'nueva' | null>(null)
   const [adquiriendo, setAdquiriendo] = useState<EvaluacionPuja | null>(null)
-  const [cargandoListado, setCargandoListado] = useState(false)
   const [viendoFotos, setViendoFotos] = useState<EvaluacionPuja | null>(null)
   const [explorando, setExplorando] = useState(false)
   const [nuevaDesdeDropbox, setNuevaDesdeDropbox] = useState<{ torre: string; stock: string | null } | null>(null)
@@ -101,11 +99,11 @@ export default function PosiblesOfertas() {
     <div>
       <PageHeader
         titulo="Posibles ofertas"
-        descripcion="Vehículos que te interesan en una subasta. Calcula cuánto pujar y, si lo ganas, adquiérelo para pasarlo a Inventario."
+        descripcion="Los vehículos de una subasta que te interesan (se marcan en Subastas). Calcula cuánto pujar y, si lo ganas, adquiérelo para pasarlo a Inventario."
         acciones={
           <>
             <button className="btn btn-secundario" onClick={() => setSubastaModal('nueva')}>+ Nueva subasta</button>
-            <button className="btn btn-primario" onClick={() => setCargandoListado(true)}>Cargar listado (PDF)</button>
+            <button className="btn btn-primario" onClick={() => navigate('/subastas')}>Elegir de Subastas</button>
           </>
         }
       />
@@ -226,7 +224,7 @@ export default function PosiblesOfertas() {
           ))}
           {pendientes.length === 0 && (
             <p className="texto-suave">
-              No hay vehículos pendientes en esta subasta. Usa "Cargar listado (PDF)", "+ Agregar vehículo"
+              No hay vehículos pendientes en esta subasta. Márcalos con "Me interesa" en Subastas, usa "+ Agregar vehículo"
               {subasta.enlace_fotos ? ' o "Ver unidades en Dropbox"' : ''} para agregar.
             </p>
           )}
@@ -274,13 +272,6 @@ export default function PosiblesOfertas() {
           roiSegmento={roiSegmento}
           onClose={() => { setEvaluacionModal(null); setNuevaDesdeDropbox(null) }}
           onGuardado={() => { setEvaluacionModal(null); setNuevaDesdeDropbox(null); recargar(subastaId) }}
-        />
-      )}
-      {cargandoListado && (
-        <CargaListadoModal
-          subastas={subastas}
-          onClose={() => setCargandoListado(false)}
-          onGuardado={(id) => { setCargandoListado(false); setCargando(true); recargar(id) }}
         />
       )}
       {explorando && subasta?.enlace_fotos && (
