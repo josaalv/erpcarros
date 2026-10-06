@@ -300,6 +300,46 @@ que la integración se hace en el navegador con OAuth PKCE (sin secreto).
   `stock`). El usuario esperaba ver las unidades al pegar el enlace aunque
   la subasta no tuviera evaluaciones: por eso existe esta vista.
 
+22. `025_catalogo_subastas.sql` — **catálogo histórico** de todo lo que sale
+    a subasta: `subasta_listado` (PDF de una empresa: código FC/GA/…,
+    vendedor, URL de origen, `carpeta_fotos` del Dropbox) y `subasta_unidad`
+    (TODAS las unidades de cada listado, `unique (subasta_id, torre)`;
+    `carpeta_fotos`, `fotos_total`, `precio_cierre` para el histórico).
+    `evaluacion_puja.subasta_unidad_id` liga "Me interesa" con su unidad.
+    `subasta.url_origen`. Solo admin. FK sin borrado en cascada: la app borra
+    unidades → listados → subasta; el botón maestro también. OJO: las
+    columnas se llaman `carpeta_fotos`/`fotos_total` y no "…dropbox" porque
+    "dropbox" contiene "drop" y el conector MCP se traba con esa palabra.
+
+**El ciclo con Prosubastas (pedido del usuario, octubre 2026)**:
+1. **Subastas** (`src/screens/Subastas.tsx`, primera del menú del ciclo):
+   "Importar desde Prosubastas" acepta el enlace de un PDF, de la carpeta de
+   un patio (`/subastas/2026_10_09/GDL/`) o de la fecha completa
+   (`/subastas/2026_10_09/` → entra a GDL/, TOL/, MID/; ignora subcarpetas
+   como "1er/"). El índice de prosubastas.com.mx es público (Apache) pero
+   sin CORS: se lee por la **Edge Function `prosubastas`**
+   (`supabase/functions/prosubastas/`, verify_jwt + exige `role =
+   authenticated` en el JWT, solo `https://prosubastas.com.mx/subastas/`,
+   sin seguir redirecciones). `src/lib/prosubastas.ts` (índices y descarga)
+   y `src/lib/catalogoSubastas.ts` (`importarListado`: subasta por fecha +
+   patio — GDL = Guadalajara —, upsert del listado y de sus unidades).
+   También se pueden subir los PDF a mano.
+2. Por subasta: enlace de fotos del patio (Dropbox) y "Ligar fotos" (cada
+   empresa con su carpeta "01 FC", cada unidad con "FC 01" confirmando el
+   stock; avisa si es el Dropbox de otro patio). Fotos se ven directo de
+   Dropbox (no se copian).
+3. "Me interesa" crea la evaluación en **Posibles ofertas** con todos los
+   datos; de ahí sigue el ciclo (puja → Adquirir). Posibles ofertas ya no
+   tiene su propia carga de PDF (`CargaListado` se eliminó): todo entra por
+   Subastas.
+4. **Histórico**: buscador en Subastas sobre `subasta_unidad` de todas las
+   subastas (serie, stock, marca, modelo, versión).
+El lector (`listadoTexto.ts`) se probó contra los 16 listados reales del
+9-oct-2026 (GDL, TOL, MID: 138 unidades, todas completas): lee el PDF como un
+documento continuo (unidades partidas entre páginas), el vendedor aunque no
+diga S.A., versiones con "AÑO … KM …" pegado y facturas "FACTURADO EL: …
+IMPORTE DE: $…".
+
 **Pruebas de permisos**: `supabase/tests/rls_por_rol.sql` corre en una
 transacción con rollback y revisa gerencia, comisionista, demo, anónimo y
 admin (control). Correrlo (MCP `execute_sql` o SQL Editor) después de

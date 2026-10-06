@@ -131,15 +131,25 @@ const normalizar = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
  * "F150" en documentos.
  */
 function extraerVersion(documentos: string, marca: string, modelo: string, anio: string): string {
-  let tramo = documentos.split(',')[0].trim().toUpperCase()
-  if (anio) tramo = tramo.replace(new RegExp(`\\s*\\b${anio}\\b\\s*$`), '').trim()
+  let tramo = documentos.split(/[,.](?:\s|$)/)[0].trim().toUpperCase()
+  // Hay vendedores cuyo párrafo no repite la descripción ("Persona FISICA, …").
+  if (!tramo.startsWith(marca + ' ') && !tramo.startsWith(normalizar(modelo).slice(0, 3))) return ''
+  // Todo lo que sigue al año sobra ("… MHEV 2026 AÑO 2026 KM 2492 DOCS …").
+  const corte = tramo.search(/\s\b(19|20)\d{2}\b/)
+  if (corte > 0) tramo = tramo.slice(0, corte).trim()
+  else if (anio) tramo = tramo.replace(new RegExp(`\\s*\\b${anio}\\b\\s*$`), '').trim()
   if (tramo.startsWith(marca + ' ')) tramo = tramo.slice(marca.length).trim()
   const palabras = tramo.split(/\s+/)
   const objetivo = normalizar(modelo)
   for (let n = palabras.length; n >= 1; n--) {
     if (normalizar(palabras.slice(0, n).join('')) === objetivo) return palabras.slice(n).join(' ')
   }
-  return tramo
+  // El modelo no coincide completo ("Ram 4x4" vs "RAM 1500 …"): quita las
+  // primeras palabras que sí son parte del modelo.
+  const delModelo = new Set(modelo.toUpperCase().split(/\s+/).map(normalizar))
+  let i = 0
+  while (i < palabras.length - 1 && delModelo.has(normalizar(palabras[i]))) i++
+  return palabras.slice(i).join(' ')
 }
 
 export function interpretarListado(paginas: ItemTexto[][]): Listado {
@@ -149,24 +159,34 @@ export function interpretarListado(paginas: ItemTexto[][]): Listado {
   let vendedor = ''
   const unidades: UnidadListado[] = []
 
+  // Todas las páginas como un solo documento continuo: una unidad puede
+  // quedar partida (torre al final de una página, stock y documentos al
+  // inicio de la siguiente). Los encabezados repetidos se quitan.
+  const lineas: Linea[] = []
   for (const items of paginas) {
-    const lineas = agruparLineas(items)
-
-    for (const l of lineas) {
+    for (const l of agruparLineas(items)) {
       if (!fechaSubasta && /subasta del d/i.test(sinAcentos(l.texto))) {
         fechaSubasta = fechaTextoISO(l.texto)
         locacion = l.texto.split(/Locaci[oó]n:/i)[1]?.trim() ?? ''
       }
       if (/fecha de reporte/i.test(l.texto)) fechaReporte = fechaTextoISO(l.texto)
+      if (!esEncabezado(l) && !/locaci[oó]n:/i.test(l.texto)) lineas.push(l)
+    }
+  }
+
+  {
+    // El renglón antes de la primera torre es el vendedor, aunque no diga
+    // S.A. (ej. "PROSUBASTAS").
+    const primeraTorre = lineas.findIndex(esTorre)
+    for (let i = 0; i < primeraTorre; i++) {
+      const l = lineas[i]
+      if (primera(l).x < COL_PRIMERA && !esStock(l)) vendedor = l.texto.trim()
     }
 
-    // Inicio de la zona libre para la siguiente unidad: después del último
-    // renglón de documentos de la anterior (o del encabezado).
     let inicio = 0
     for (let i = 0; i < lineas.length; i++) {
       const l = lineas[i]
       if (esVendedor(l)) { vendedor = l.texto.trim(); inicio = i + 1; continue }
-      if (esEncabezado(l)) { inicio = i + 1; continue }
       if (!esStock(l)) continue
 
       // Renglones de esta unidad: de `inicio` hasta el del stock.
@@ -218,8 +238,9 @@ export function interpretarListado(paginas: ItemTexto[][]): Listado {
         transmision,
         vendedor,
         tipoPersona: documentos.match(/Persona\s+(F[IÍ]SICA CON ACTIVIDAD EMPRESARIAL|F[IÍ]SICA|MORAL)/i)?.[1]?.toUpperCase() ?? '',
-        fechaFactura: fechaNumericaISO(documentos.match(/Fecha Factura\s+([\d/]+)/i)?.[1] ?? ''),
-        valorFactura: numero(documentos.match(/Importe\s+\$?\s*([\d,]+(?:\.\d+)?)/i)?.[1] ?? ''),
+        // "Fecha Factura 28/10/2024, Importe $770000" o "FACTURADO EL: 23/03/2021 EN UN IMPORTE DE: $115,420.30"
+        fechaFactura: fechaNumericaISO(documentos.match(/(?:Fecha Factura|FACTURADO EL)\s*:?\s*([\d/]+)/i)?.[1] ?? ''),
+        valorFactura: numero(documentos.match(/IMPORTE(?:\s+DE)?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i)?.[1] ?? ''),
         documentos,
       })
       inicio = j

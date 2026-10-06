@@ -43,7 +43,7 @@ export async function extraerPagina(archivo: File, pagina: number): Promise<Blob
 }
 
 /** Lee el "Listado de Unidades a Subastar": texto con su posición en la página. */
-export async function leerListado(archivo: File): Promise<Listado> {
+export async function leerListado(archivo: Blob): Promise<Listado> {
   const pdfjs = await cargarPdfjs()
   const doc = await pdfjs.getDocument({ data: new Uint8Array(await archivo.arrayBuffer()) }).promise
   const paginas: ItemListado[][] = []

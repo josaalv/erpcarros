@@ -12,6 +12,7 @@ import EnVenta from './screens/EnVenta'
 import Vendidos from './screens/Vendidos'
 import Socios from './screens/Socios'
 import Resultados from './screens/Resultados'
+import Subastas from './screens/Subastas'
 import PorCobrar from './screens/PorCobrar'
 import PorPagar from './screens/PorPagar'
 // Taller y Consignación desactivadas (ver Layout.tsx) — los archivos
@@ -75,6 +76,7 @@ function Rutas() {
         <Route path="vendidos" element={<Vendidos />} />
         <Route path="socios" element={<Socios />} />
         <Route path="resultados" element={<Resultados />} />
+        <Route path="subastas" element={<Subastas />} />
         <Route path="por-cobrar" element={<PorCobrar />} />
         <Route path="por-pagar" element={<PorPagar />} />
         <Route path="ventas" element={<Ventas />} />

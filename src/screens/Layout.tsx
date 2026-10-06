@@ -19,6 +19,7 @@ const GRUPOS: GrupoNav[] = [
   {
     titulo: 'Ciclo del vehículo',
     items: [
+      { to: '/subastas', label: 'Subastas', roles: ADMIN },
       { to: '/posibles-ofertas', label: 'Posibles ofertas', roles: ADMIN },
       { to: '/inventario', label: 'Inventario' },
       { to: '/en-proceso', label: 'En proceso', roles: ADMIN_GERENCIA },
