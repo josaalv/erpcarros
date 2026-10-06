@@ -147,7 +147,7 @@ export interface CarpetaUnidad {
 
 // Cache por enlace: abrir varias unidades de la misma subasta no vuelve a listar la raíz.
 const cacheCarpetas = new Map<string, Promise<EntradaDropbox[]>>()
-const listarConCache = (enlace: string, ruta: string) => {
+export const listarConCache = (enlace: string, ruta: string) => {
   const k = `${enlace}|${ruta}`
   if (!cacheCarpetas.has(k)) cacheCarpetas.set(k, listarCarpeta(enlace, ruta).catch((e) => { cacheCarpetas.delete(k); throw e }))
   return cacheCarpetas.get(k)!
@@ -197,4 +197,47 @@ export async function reducirFoto(blob: Blob, lado = 1280, calidad = 0.8): Promi
   canvas.height = Math.round(bmp.height * escala)
   canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height)
   return new Promise((ok, mal) => canvas.toBlob((b) => (b ? ok(b) : mal(new Error('No se pudo reducir la foto'))), 'image/jpeg', calidad))
+}
+
+/** "FC 01" → "FC-1" (formato de torre del listado). */
+export function torreDeCarpeta(nombre: string): string {
+  const m = nombre.trim().match(/^([A-Za-z]{1,5})[\s_-]*0*(\d{1,4})$/)
+  return m ? `${m[1].toUpperCase()}-${m[2]}` : nombre.trim()
+}
+
+export interface UnidadDropbox {
+  carpeta: EntradaDropbox
+  torre: string
+  stock: string | null
+  fotos: EntradaDropbox[]
+}
+
+/** Carpetas de vendedor de la subasta ("01 FC" → código FC). */
+export async function vendedoresDropbox(enlace: string): Promise<{ carpeta: EntradaDropbox; codigo: string }[]> {
+  const raiz = await listarConCache(enlace, '')
+  return raiz.filter((e) => e.tipo === 'folder')
+    .map((carpeta) => ({ carpeta, codigo: carpeta.nombre.replace(/^\d+\s*/, '').trim() || carpeta.nombre }))
+}
+
+/** Unidades dentro de la carpeta de un vendedor, con su stock (del nombre del PDF) y sus fotos. */
+export async function unidadesDeVendedor(enlace: string, rutaVendedor: string, alAvanzar?: (u: UnidadDropbox) => void): Promise<UnidadDropbox[]> {
+  const carpetas = (await listarConCache(enlace, rutaVendedor)).filter((e) => e.tipo === 'folder')
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { numeric: true }))
+  const salida: UnidadDropbox[] = []
+  for (let i = 0; i < carpetas.length; i += 4) {
+    const lote = await Promise.all(carpetas.slice(i, i + 4).map(async (carpeta) => {
+      const archivos = (await listarConCache(enlace, carpeta.ruta)).filter((a) => a.tipo === 'file')
+      const pdf = archivos.find((a) => /^\d{3,8}\.pdf$/i.test(a.nombre)) ?? archivos.find((a) => /^\d{3,8}\b.*\.pdf$/i.test(a.nombre))
+      const u: UnidadDropbox = {
+        carpeta,
+        torre: torreDeCarpeta(carpeta.nombre),
+        stock: pdf?.nombre.match(/^(\d{3,8})/)?.[1] ?? null,
+        fotos: archivos.filter((a) => /\.(jpe?g|png|webp)$/i.test(a.nombre)).sort((a, b) => a.nombre.localeCompare(b.nombre)),
+      }
+      alAvanzar?.(u)
+      return u
+    }))
+    salida.push(...lote)
+  }
+  return salida
 }
