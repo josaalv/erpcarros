@@ -292,6 +292,13 @@ que la integración se hace en el navegador con OAuth PKCE (sin secreto).
   con borrado en cascada) + su grant de columna; tipo de documento `repuve`.
   `FotosUnidad` en el Resumen del Expediente: ver, agregar, quitar, portada.
   Eliminar unidad borra también esos archivos.
+- **"Ver unidades en Dropbox"** (`ExploradorDropbox`, en la tarjeta de la
+  subasta): explora el Dropbox SIN listado — chips por vendedor, tarjeta
+  por unidad (portada, torre "FC-1" desde la carpeta "FC 01", stock desde
+  el nombre del PDF, núm. de fotos) y "Evaluar" abre la evaluación con
+  torre y stock ya llenos (`EvaluacionModal` acepta `inicial` y ahora edita
+  `stock`). El usuario esperaba ver las unidades al pegar el enlace aunque
+  la subasta no tuviera evaluaciones: por eso existe esta vista.
 
 **Pruebas de permisos**: `supabase/tests/rls_por_rol.sql` corre en una
 transacción con rollback y revisa gerencia, comisionista, demo, anónimo y

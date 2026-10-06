@@ -287,3 +287,7 @@ details.plegable summary { cursor: pointer; color: var(--text-soft); font-weight
 .galeria-portada { position: absolute; top: 6px; left: 6px; background: var(--primary); color: #fff; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
 .galeria-botones { position: absolute; bottom: 6px; right: 6px; display: flex; gap: 4px; background: rgba(255, 255, 255, 0.92); border-radius: 8px; padding: 2px 4px; }
 .btn.deshabilitado { opacity: 0.6; pointer-events: none; }
+.galeria-unidades { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.tarjeta-unidad { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+.tarjeta-unidad .galeria-foto { border: 0; border-radius: 0; width: 100%; }
+.tarjeta-unidad-pie { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }

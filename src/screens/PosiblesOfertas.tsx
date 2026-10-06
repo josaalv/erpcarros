@@ -8,6 +8,7 @@ import { mxn, porcentaje, fecha, km, hoyISO, numeroONull, etiqueta, RESULTADO_EV
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, EtiquetaBadge } from '../components/Ui'
 import { CargaListadoModal } from '../components/CargaListado'
 import { FotosDropboxModal } from '../components/FotosDropbox'
+import { ExploradorDropbox } from '../components/ExploradorDropbox'
 import { copiarDeDropbox } from '../lib/dropboxUnidad'
 import { dropboxConectado } from '../lib/dropbox'
 import type { Subasta, EvaluacionPuja, RoiSegmento } from '../types'
@@ -29,6 +30,8 @@ export default function PosiblesOfertas() {
   const [adquiriendo, setAdquiriendo] = useState<EvaluacionPuja | null>(null)
   const [cargandoListado, setCargandoListado] = useState(false)
   const [viendoFotos, setViendoFotos] = useState<EvaluacionPuja | null>(null)
+  const [explorando, setExplorando] = useState(false)
+  const [nuevaDesdeDropbox, setNuevaDesdeDropbox] = useState<{ torre: string; stock: string | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function recargar(subastaSeleccionada?: number | null) {
@@ -137,7 +140,10 @@ export default function PosiblesOfertas() {
                   {porEvaluar > 0 && ` · ${porEvaluar} sin precio de mercado`}
                 </p>
                 {subasta.enlace_fotos && (
-                  <a className="btn-link" href={subasta.enlace_fotos} target="_blank" rel="noreferrer">Ver fotos en Dropbox ↗</a>
+                  <span style={{ display: 'inline-flex', gap: 12, flexWrap: 'wrap' }}>
+                    <button className="btn-link" onClick={() => setExplorando(true)}>Ver unidades en Dropbox</button>
+                    <a className="btn-link" href={subasta.enlace_fotos} target="_blank" rel="noreferrer">Abrir en Dropbox ↗</a>
+                  </span>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -219,7 +225,10 @@ export default function PosiblesOfertas() {
             </section>
           ))}
           {pendientes.length === 0 && (
-            <p className="texto-suave">No hay vehículos pendientes en esta subasta. Usa "+ Agregar vehículo" para evaluar uno.</p>
+            <p className="texto-suave">
+              No hay vehículos pendientes en esta subasta. Usa "Cargar listado (PDF)", "+ Agregar vehículo"
+              {subasta.enlace_fotos ? ' o "Ver unidades en Dropbox"' : ''} para agregar.
+            </p>
           )}
 
           {decididas.length > 0 && (
@@ -261,9 +270,10 @@ export default function PosiblesOfertas() {
         <EvaluacionModal
           subastaId={subastaId}
           evaluacion={evaluacionModal === 'nueva' ? null : evaluacionModal}
+          inicial={evaluacionModal === 'nueva' ? nuevaDesdeDropbox : null}
           roiSegmento={roiSegmento}
-          onClose={() => setEvaluacionModal(null)}
-          onGuardado={() => { setEvaluacionModal(null); recargar(subastaId) }}
+          onClose={() => { setEvaluacionModal(null); setNuevaDesdeDropbox(null) }}
+          onGuardado={() => { setEvaluacionModal(null); setNuevaDesdeDropbox(null); recargar(subastaId) }}
         />
       )}
       {cargandoListado && (
@@ -271,6 +281,14 @@ export default function PosiblesOfertas() {
           subastas={subastas}
           onClose={() => setCargandoListado(false)}
           onGuardado={(id) => { setCargandoListado(false); setCargando(true); recargar(id) }}
+        />
+      )}
+      {explorando && subasta?.enlace_fotos && (
+        <ExploradorDropbox
+          enlace={subasta.enlace_fotos}
+          evaluaciones={evaluaciones}
+          onEvaluar={(u) => { setExplorando(false); setNuevaDesdeDropbox({ torre: u.torre, stock: u.stock }); setEvaluacionModal('nueva') }}
+          onClose={() => setExplorando(false)}
         />
       )}
       {viendoFotos && subasta?.enlace_fotos && viendoFotos.torre && (
@@ -342,18 +360,20 @@ function SubastaModal({ subasta, onClose, onGuardado }: { subasta: Subasta | nul
   )
 }
 
-function EvaluacionModal({ subastaId, evaluacion, roiSegmento, onClose, onGuardado }: {
+function EvaluacionModal({ subastaId, evaluacion, inicial, roiSegmento, onClose, onGuardado }: {
   subastaId: number
   evaluacion: EvaluacionPuja | null
+  /** Torre y stock ya conocidos (al evaluar desde las carpetas de Dropbox). */
+  inicial?: { torre: string; stock: string | null } | null
   roiSegmento: RoiSegmento[]
   onClose: () => void
   onGuardado: () => void
 }) {
   const ev = evaluacion
   const { comision_subasta: COMISION_SUBASTA, margen_deseado: margenDefault } = useParametros()
-  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:evaluacion:${subastaId}:${ev?.id ?? 'nueva'}`, {
+  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:evaluacion:${subastaId}:${ev?.id ?? `nueva${inicial?.stock ?? inicial?.torre ?? ''}`}`, {
     marca: ev?.marca ?? '', modelo: ev?.modelo ?? '', anio: String(ev?.anio ?? new Date().getFullYear()),
-    version: ev?.version ?? '', torre: ev?.torre ?? '',
+    version: ev?.version ?? '', torre: ev?.torre ?? inicial?.torre ?? '', stock: ev?.stock ?? inicial?.stock ?? '',
     kilometrajeLlegada: ev?.kilometraje_llegada != null ? String(ev.kilometraje_llegada) : '',
     danos: ev?.danos_observados ?? '',
     costoReparacion: ev ? String(ev.costo_reparacion_estimado) : '',
@@ -384,6 +404,7 @@ function EvaluacionModal({ subastaId, evaluacion, roiSegmento, onClose, onGuarda
       subasta_id: subastaId,
       marca: form.marca.trim(), modelo: form.modelo.trim(), anio: Number(form.anio), version: form.version.trim() || null,
       torre: form.torre.trim() || null,
+      stock: form.stock.trim() || null,
       kilometraje_llegada: numeroONull(form.kilometrajeLlegada),
       danos_observados: form.danos.trim() || null,
       costo_reparacion_estimado: costoRep,
@@ -413,6 +434,7 @@ function EvaluacionModal({ subastaId, evaluacion, roiSegmento, onClose, onGuarda
         <div className="form-grid">
           <Campo label="Versión"><input className="input" value={form.version} onChange={(e) => set('version', e.target.value)} /></Campo>
           <Campo label="Torre"><input className="input" value={form.torre} onChange={(e) => set('torre', e.target.value)} /></Campo>
+          <Campo label="Stock"><input className="input" value={form.stock} onChange={(e) => set('stock', e.target.value)} /></Campo>
           <Campo label="Km de llegada"><input className="input" type="number" min={0} value={form.kilometrajeLlegada} onChange={(e) => set('kilometrajeLlegada', e.target.value)} /></Campo>
         </div>
         {ev?.stock && (
