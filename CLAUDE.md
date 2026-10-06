@@ -244,6 +244,35 @@ búsqueda y filtros (la selección solo cuenta filas visibles).
     activo = aportado en unidades no vendidas, ya pagado, por pagarle).
     Menú: grupo "Dinero" (Por cobrar, Por pagar, Resultados, Socios).
 
+21. `023_listado_subasta.sql` — columnas del listado en `evaluacion_puja`
+    (`stock`, `vin`, `color`, `puertas`, `equipamiento`, `transmision`,
+    `vendedor`, `valor_factura`, `fecha_factura`, `info_documentos`) y
+    `subasta.enlace_fotos` (carpeta compartida de Dropbox).
+
+**Carga rápida del listado de subasta** (Posibles ofertas → "Cargar listado
+(PDF)", `src/components/CargaListado.tsx`): lee el "Listado de Unidades a
+Subastar" de Prosubastas con `src/lib/listadoTexto.ts` (por POSICIÓN x/y de
+cada texto: la descripción a veces se parte en dos renglones alrededor del
+de la torre; marcas compuestas como LAND ROVER y siglas como GMC en listas).
+Detecta fecha, locación, vendedor y por unidad torre, stock, serie, año,
+marca, modelo, versión (del párrafo de documentos), puertas, color, km,
+equipamiento (TA/TM → transmisión), fecha e importe de la factura. Crea o
+reutiliza la subasta (misma plataforma + fecha + locación) e inserta todas
+las evaluaciones elegidas en UNA sentencia; no duplica stocks ya cargados en
+esa fecha y avisa si la serie ya es una unidad nuestra. Las evaluaciones
+sin precio de mercado se muestran "Por evaluar". "Adquirir" pasa serie,
+color, transmisión, torre, stock y subasta a la unidad. Probado con un
+listado real del usuario (no está en el repo).
+
+**Dropbox de la subasta** (estructura vista en un enlace real): una carpeta
+por vendedor ("01 FC", "07 GA"…) y dentro una por unidad ("FC 01" = torre
+FC-1) con `<stock>.pdf` (hoja de inspección de Prosubastas, escrita a mano:
+daños por lado con costo estimado), `<stock> REPUVE.pdf` y ~25 fotos JPG
+de ~0.6 MB. Una subasta completa pesa ~1.5 GB: NO cabe en el Storage
+gratuito (1 GB) ni en una Edge Function. La API de Dropbox sí acepta
+llamadas directas desde `https://josaalv.github.io` (CORS verificado), así
+que la integración se hace en el navegador con OAuth PKCE (sin secreto).
+
 **Pruebas de permisos**: `supabase/tests/rls_por_rol.sql` corre en una
 transacción con rollback y revisa gerencia, comisionista, demo, anónimo y
 admin (control). Correrlo (MCP `execute_sql` o SQL Editor) después de

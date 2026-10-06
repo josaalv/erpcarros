@@ -273,3 +273,6 @@ details.plegable summary { cursor: pointer; color: var(--text-soft); font-weight
 .barra-masiva .select { width: auto; }
 .col-check { width: 36px; }
 .col-check input { width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer; }
+/* Tabla larga dentro de un modal: se desplaza sin estirar la ventana */
+.tabla-alta { max-height: 38vh; overflow-y: auto; }
+.tabla-alta thead th { position: sticky; top: 0; z-index: 1; }

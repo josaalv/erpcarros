@@ -1,6 +1,7 @@
 import { interpretarPagina, type UnidadContrato } from './contratoTexto'
+import { interpretarListado, type Listado, type ItemTexto as ItemListado } from './listadoTexto'
 
-export type { UnidadContrato }
+export type { UnidadContrato, Listado }
 
 interface ItemTexto { str: string; hasEOL?: boolean }
 
@@ -39,4 +40,17 @@ export async function extraerPagina(archivo: File, pagina: number): Promise<Blob
   destino.addPage(copia)
   const bytes = await destino.save()
   return new Blob([bytes as BlobPart], { type: 'application/pdf' })
+}
+
+/** Lee el "Listado de Unidades a Subastar": texto con su posición en la página. */
+export async function leerListado(archivo: File): Promise<Listado> {
+  const pdfjs = await cargarPdfjs()
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(await archivo.arrayBuffer()) }).promise
+  const paginas: ItemListado[][] = []
+  for (let p = 1; p <= doc.numPages; p++) {
+    const contenido = await (await doc.getPage(p)).getTextContent()
+    paginas.push((contenido.items as { str: string; transform: number[] }[])
+      .map((it) => ({ x: it.transform[4], y: it.transform[5], s: it.str })))
+  }
+  return interpretarListado(paginas)
 }
