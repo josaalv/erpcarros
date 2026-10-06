@@ -316,6 +316,8 @@ export interface Subasta {
   fecha: string
   lote: string | null
   patio_origen: string | null
+  /** Carpeta compartida de Dropbox con las fotos de la subasta. */
+  enlace_fotos: string | null
 }
 
 export interface EvaluacionPuja {
@@ -336,6 +338,17 @@ export interface EvaluacionPuja {
   roi_proyectado: number | null
   roi_historico_segmento: number | null
   resultado: 'pendiente' | 'ganada' | 'perdida' | 'descartada'
+  // Del listado de la subasta (carga rápida); null en las capturadas a mano.
+  stock: string | null
+  vin: string | null
+  color: string | null
+  puertas: number | null
+  equipamiento: string | null
+  transmision: string | null
+  vendedor: string | null
+  valor_factura: number | null
+  fecha_factura: string | null
+  info_documentos: string | null
 }
 
 export interface RoiSegmento {

@@ -4,8 +4,9 @@ import { supabase } from '../lib/supabase'
 import { useCatalogos } from '../lib/catalogos'
 import { useBorrador } from '../lib/useBorrador'
 import { useParametros } from '../lib/parametros'
-import { mxn, porcentaje, fecha, km, hoyISO, numeroONull, etiqueta, RESULTADO_EVALUACION } from '../lib/helpers'
+import { mxn, porcentaje, fecha, km, hoyISO, numeroONull, etiqueta, RESULTADO_EVALUACION, TRANSMISION_LABEL } from '../lib/helpers'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, EtiquetaBadge } from '../components/Ui'
+import { CargaListadoModal } from '../components/CargaListado'
 import type { Subasta, EvaluacionPuja, RoiSegmento } from '../types'
 
 /**
@@ -23,6 +24,7 @@ export default function PosiblesOfertas() {
   const [subastaModal, setSubastaModal] = useState<Subasta | 'nueva' | null>(null)
   const [evaluacionModal, setEvaluacionModal] = useState<EvaluacionPuja | 'nueva' | null>(null)
   const [adquiriendo, setAdquiriendo] = useState<EvaluacionPuja | null>(null)
+  const [cargandoListado, setCargandoListado] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function recargar(subastaSeleccionada?: number | null) {
@@ -80,6 +82,7 @@ export default function PosiblesOfertas() {
   const subasta = subastas.find((s) => s.id === subastaId) ?? null
   const pendientes = evaluaciones.filter((e) => e.resultado === 'pendiente')
   const decididas = evaluaciones.filter((e) => e.resultado !== 'pendiente')
+  const porEvaluar = pendientes.filter((e) => !e.precio_venta_esperado).length
 
   const porMarca = pendientes.reduce<Record<string, EvaluacionPuja[]>>((acc, e) => {
     (acc[e.marca] ??= []).push(e)
@@ -92,7 +95,12 @@ export default function PosiblesOfertas() {
       <PageHeader
         titulo="Posibles ofertas"
         descripcion="Vehículos que te interesan en una subasta. Calcula cuánto pujar y, si lo ganas, adquiérelo para pasarlo a Inventario."
-        acciones={<button className="btn btn-secundario" onClick={() => setSubastaModal('nueva')}>+ Nueva subasta</button>}
+        acciones={
+          <>
+            <button className="btn btn-secundario" onClick={() => setSubastaModal('nueva')}>+ Nueva subasta</button>
+            <button className="btn btn-primario" onClick={() => setCargandoListado(true)}>Cargar listado (PDF)</button>
+          </>
+        }
       />
 
       {error && <div style={{ marginBottom: 16 }}><Alerta>{error}</Alerta></div>}
@@ -122,7 +130,11 @@ export default function PosiblesOfertas() {
                 <p className="card-sub" style={{ margin: 0 }}>
                   {[subasta.lote && `Lote ${subasta.lote}`, subasta.patio_origen && `Patio ${subasta.patio_origen}`].filter(Boolean).join(' · ') || 'Sin lote ni patio registrados'}
                   {' · '}{pendientes.length} por decidir
+                  {porEvaluar > 0 && ` · ${porEvaluar} sin precio de mercado`}
                 </p>
+                {subasta.enlace_fotos && (
+                  <a className="btn-link" href={subasta.enlace_fotos} target="_blank" rel="noreferrer">Ver fotos en Dropbox ↗</a>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button className="btn-link" onClick={() => setSubastaModal(subasta)}>Editar subasta</button>
@@ -152,16 +164,30 @@ export default function PosiblesOfertas() {
                   <tbody>
                     {porMarca[marca].map((e) => (
                       <tr key={e.id}>
-                        <td>{e.torre ?? '—'}</td>
+                        <td className="nowrap">
+                          {e.torre ?? '—'}
+                          {e.stock && <span className="unidad-folio">Stock {e.stock}</span>}
+                        </td>
                         <td>
                           <span className="unidad-nombre">{e.modelo} {e.anio}</span>
-                          {e.version && <span className="unidad-folio">{e.version}</span>}
+                          <span className="unidad-folio">{[e.version, e.color, e.transmision && TRANSMISION_LABEL[e.transmision]].filter(Boolean).join(' · ')}</span>
                         </td>
-                        <td>{km(e.kilometraje_llegada)}</td>
-                        <td className="num">{mxn(e.precio_venta_esperado)}</td>
-                        <td className="num">{mxn(e.costo_reparacion_estimado)}</td>
-                        <td className="num" style={{ fontWeight: 700, color: (e.techo_puja ?? 0) < 0 ? 'var(--danger)' : 'var(--primary)' }}>{mxn(e.techo_puja)}</td>
-                        <td className="num">{porcentaje(e.roi_proyectado)}</td>
+                        <td>
+                          {km(e.kilometraje_llegada)}
+                          {e.valor_factura != null && <span className="unidad-folio">Factura {mxn(e.valor_factura)}</span>}
+                        </td>
+                        {e.precio_venta_esperado ? (
+                          <>
+                            <td className="num">{mxn(e.precio_venta_esperado)}</td>
+                            <td className="num">{mxn(e.costo_reparacion_estimado)}</td>
+                            <td className="num" style={{ fontWeight: 700, color: (e.techo_puja ?? 0) < 0 ? 'var(--danger)' : 'var(--primary)' }}>{mxn(e.techo_puja)}</td>
+                            <td className="num">{porcentaje(e.roi_proyectado)}</td>
+                          </>
+                        ) : (
+                          <td colSpan={4}>
+                            <button className="btn-link" onClick={() => setEvaluacionModal(e)}>Por evaluar: capturar precio de mercado y reparación</button>
+                          </td>
+                        )}
                         <td className="acciones-celda">
                           <button className="btn btn-primario btn-chico" onClick={() => setAdquiriendo(e)}>Adquirir</button>{' '}
                           <select className="select select-chico" value="" onChange={(ev) => {
@@ -232,6 +258,13 @@ export default function PosiblesOfertas() {
           onGuardado={() => { setEvaluacionModal(null); recargar(subastaId) }}
         />
       )}
+      {cargandoListado && (
+        <CargaListadoModal
+          subastas={subastas}
+          onClose={() => setCargandoListado(false)}
+          onGuardado={(id) => { setCargandoListado(false); setCargando(true); recargar(id) }}
+        />
+      )}
       {adquiriendo && (
         <AdquirirModal
           evaluacion={adquiriendo}
@@ -251,6 +284,7 @@ function SubastaModal({ subasta, onClose, onGuardado }: { subasta: Subasta | nul
     fecha: subasta?.fecha ?? hoyISO(),
     lote: subasta?.lote ?? '',
     patioOrigen: subasta?.patio_origen ?? '',
+    enlaceFotos: subasta?.enlace_fotos ?? '',
   })
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
@@ -261,7 +295,7 @@ function SubastaModal({ subasta, onClose, onGuardado }: { subasta: Subasta | nul
     if (!supabase) return
     setGuardando(true)
     setError(null)
-    const datos = { plataforma: form.plataforma.trim(), fecha: form.fecha, lote: form.lote.trim() || null, patio_origen: form.patioOrigen.trim() || null }
+    const datos = { plataforma: form.plataforma.trim(), fecha: form.fecha, lote: form.lote.trim() || null, patio_origen: form.patioOrigen.trim() || null, enlace_fotos: form.enlaceFotos.trim() || null }
     const { data, error } = subasta
       ? await supabase.from('subasta').update(datos).eq('id', subasta.id).select().single()
       : await supabase.from('subasta').insert(datos).select().single()
@@ -282,6 +316,7 @@ function SubastaModal({ subasta, onClose, onGuardado }: { subasta: Subasta | nul
           <Campo label="Lote (opcional)"><input className="input" value={form.lote} onChange={(e) => set('lote', e.target.value)} /></Campo>
           <Campo label="Patio de origen (opcional)"><input className="input" value={form.patioOrigen} onChange={(e) => set('patioOrigen', e.target.value)} /></Campo>
         </div>
+        <Campo label="Enlace de Dropbox con las fotos (opcional)"><input className="input" value={form.enlaceFotos} onChange={(e) => set('enlaceFotos', e.target.value)} /></Campo>
         {error && <Alerta>{error}</Alerta>}
         <FormBotones onClose={onClose} guardando={guardando} />
       </form>
@@ -362,6 +397,21 @@ function EvaluacionModal({ subastaId, evaluacion, roiSegmento, onClose, onGuarda
           <Campo label="Torre"><input className="input" value={form.torre} onChange={(e) => set('torre', e.target.value)} /></Campo>
           <Campo label="Km de llegada"><input className="input" type="number" min={0} value={form.kilometrajeLlegada} onChange={(e) => set('kilometrajeLlegada', e.target.value)} /></Campo>
         </div>
+        {ev?.stock && (
+          <details className="plegable">
+            <summary>Datos del listado de la subasta</summary>
+            <div className="datos" style={{ marginTop: 8 }}>
+              <div><div className="dato-label">Stock</div><div>{ev.stock}</div></div>
+              {ev.vin && <div><div className="dato-label">Serie</div><div>{ev.vin}</div></div>}
+              {ev.color && <div><div className="dato-label">Color</div><div>{ev.color}</div></div>}
+              {ev.puertas && <div><div className="dato-label">Puertas</div><div>{ev.puertas}</div></div>}
+              {ev.equipamiento && <div><div className="dato-label">Equipamiento</div><div>{ev.equipamiento}</div></div>}
+              {ev.valor_factura != null && <div><div className="dato-label">Factura de origen</div><div>{mxn(ev.valor_factura)}{ev.fecha_factura ? ` · ${fecha(ev.fecha_factura)}` : ''}</div></div>}
+              {ev.vendedor && <div><div className="dato-label">Vendedor</div><div>{ev.vendedor}</div></div>}
+            </div>
+            {ev.info_documentos && <p className="texto-suave" style={{ marginBottom: 0 }}>{ev.info_documentos}</p>}
+          </details>
+        )}
         <Campo label="Daños observados"><input className="input" value={form.danos} onChange={(e) => set('danos', e.target.value)} /></Campo>
         <div className="form-grid">
           <Campo label="Precio de mercado"><input className="input" required type="number" step="0.01" min={0} value={form.precioMercado} onChange={(e) => set('precioMercado', e.target.value)} /></Campo>
@@ -411,9 +461,11 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
       id_interno: '',
       marca: evaluacion.marca, modelo: evaluacion.modelo, anio: evaluacion.anio, version: evaluacion.version,
       kilometraje: evaluacion.kilometraje_llegada,
+      vin: evaluacion.vin, color: evaluacion.color, transmision: evaluacion.transmision,
+      torre: evaluacion.torre, stock_subasta: evaluacion.stock, subasta_id: evaluacion.subasta_id,
       estado_proceso_id: estados.find((x) => x.clave === 'comprado')?.id,
       ubicacion_id: ubicaciones.find((u) => u.clave === 'traslado')?.id,
-      fecha_compra: form.fechaCompra, precio_autorizado: evaluacion.precio_venta_esperado,
+      fecha_compra: form.fechaCompra, precio_autorizado: evaluacion.precio_venta_esperado || null,
     }).select('id').single()
 
     if (errVehiculo || !vehiculo) {
