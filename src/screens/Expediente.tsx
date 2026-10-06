@@ -11,6 +11,7 @@ import { useBorrador } from '../lib/useBorrador'
 import { BUCKET_DOCUMENTOS, abrirArchivo, quitarArchivos, subirArchivo } from '../lib/archivos'
 import { miniatura } from '../lib/miniatura'
 import { Bitacora } from '../components/Bitacora'
+import { FotosUnidad } from '../components/FotosUnidad'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, Dato, EtiquetaBadge, Seccion, Badge } from '../components/Ui'
 import type { VehiculoFicha, Gasto, Proveedor, TipoDocumento, Documento, Aportacion, Socio, CategoriaGasto } from '../types'
 
@@ -164,6 +165,8 @@ export default function Expediente() {
               </div>
             )}
           </div>
+
+          {esAdminOGerencia && <FotosUnidad vehiculoId={veh.id} puedeEditar={esAdminOGerencia} />}
 
           {editandoDatos && (
             <EditarDatosModal veh={veh} esAdmin={esAdmin} onClose={() => setEditandoDatos(false)}
@@ -390,7 +393,11 @@ function EliminarUnidad({ veh, documentos, gastos, onEliminada }: { veh: Vehicul
     // Los cobros no cascadean con la venta (FK sin acción): se quitan antes.
     const { error: errCobros } = await supabase.from('cobro').delete().eq('vehiculo_id', veh.id)
     if (errCobros) { setEliminando(false); setError(errCobros.message); return }
-    await quitarArchivos([...documentos.map((d) => d.archivo_path), ...gastos.map((g) => g.comprobante_path)])
+    const { data: conFotos } = await supabase.from('vehiculo').select('fotos').eq('id', veh.id).maybeSingle()
+    await quitarArchivos([
+      ...documentos.map((d) => d.archivo_path), ...gastos.map((g) => g.comprobante_path),
+      ...((conFotos as { fotos: string[] } | null)?.fotos ?? []),
+    ])
     const { error: errBorrar } = await supabase.from('vehiculo').delete().eq('id', veh.id)
     setEliminando(false)
     if (errBorrar) { setError(errBorrar.message); return }

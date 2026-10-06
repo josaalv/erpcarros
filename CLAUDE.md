@@ -272,6 +272,26 @@ de ~0.6 MB. Una subasta completa pesa ~1.5 GB: NO cabe en el Storage
 gratuito (1 GB) ni en una Edge Function. La API de Dropbox sí acepta
 llamadas directas desde `https://josaalv.github.io` (CORS verificado), así
 que la integración se hace en el navegador con OAuth PKCE (sin secreto).
+- `src/lib/dropbox.ts`: conexión (App key en `parametro.dropbox_app_key`;
+  refresh token en localStorage de cada navegador, nunca en la base;
+  `main.tsx` completa el regreso `?code=` antes de montar el router),
+  `listarCarpeta`, `miniaturaDropbox` (get_thumbnail_v2 con link),
+  `descargarDropbox` (sharing/get_shared_link_file), `buscarCarpetaUnidad`
+  (carpeta de vendedor por prefijo de torre → carpeta "FC 01" = "FC-1",
+  confirmada con el stock en los nombres; `coincideStock=false` si no) y
+  `reducirFoto` (1280 px JPEG). Scopes necesarios de la app:
+  files.metadata.read, files.content.read, sharing.read.
+- UI: Configuración → General "Dropbox" (App key + Conectar);
+  Posibles ofertas botón "Fotos" (`FotosDropboxModal`: miniaturas, hoja de
+  inspección y REPUVE, sin guardar nada); "Adquirir" copia hoja de
+  inspección (tipo `cotizacion_danos_subasta`), REPUVE (tipo `repuve`) y 8
+  fotos reducidas (`src/lib/dropboxUnidad.ts`); si la copia falla la unidad
+  NO se deshace.
+- `024_fotos_vehiculo_y_repuve.sql`: `vehiculo.fotos text[]` (rutas en
+  Storage, la primera es portada; arreglo y no tabla para no necesitar FK
+  con borrado en cascada) + su grant de columna; tipo de documento `repuve`.
+  `FotosUnidad` en el Resumen del Expediente: ver, agregar, quitar, portada.
+  Eliminar unidad borra también esos archivos.
 
 **Pruebas de permisos**: `supabase/tests/rls_por_rol.sql` corre en una
 transacción con rollback y revisa gerencia, comisionista, demo, anónimo y

@@ -7,6 +7,9 @@ import { useParametros } from '../lib/parametros'
 import { mxn, porcentaje, fecha, km, hoyISO, numeroONull, etiqueta, RESULTADO_EVALUACION, TRANSMISION_LABEL } from '../lib/helpers'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, EtiquetaBadge } from '../components/Ui'
 import { CargaListadoModal } from '../components/CargaListado'
+import { FotosDropboxModal } from '../components/FotosDropbox'
+import { copiarDeDropbox } from '../lib/dropboxUnidad'
+import { dropboxConectado } from '../lib/dropbox'
 import type { Subasta, EvaluacionPuja, RoiSegmento } from '../types'
 
 /**
@@ -25,6 +28,7 @@ export default function PosiblesOfertas() {
   const [evaluacionModal, setEvaluacionModal] = useState<EvaluacionPuja | 'nueva' | null>(null)
   const [adquiriendo, setAdquiriendo] = useState<EvaluacionPuja | null>(null)
   const [cargandoListado, setCargandoListado] = useState(false)
+  const [viendoFotos, setViendoFotos] = useState<EvaluacionPuja | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function recargar(subastaSeleccionada?: number | null) {
@@ -157,7 +161,6 @@ export default function PosiblesOfertas() {
                       <th className="num">Precio mercado</th>
                       <th className="num">Reparación</th>
                       <th className="num">Puja máxima</th>
-                      <th className="num">ROI</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -180,15 +183,20 @@ export default function PosiblesOfertas() {
                           <>
                             <td className="num">{mxn(e.precio_venta_esperado)}</td>
                             <td className="num">{mxn(e.costo_reparacion_estimado)}</td>
-                            <td className="num" style={{ fontWeight: 700, color: (e.techo_puja ?? 0) < 0 ? 'var(--danger)' : 'var(--primary)' }}>{mxn(e.techo_puja)}</td>
-                            <td className="num">{porcentaje(e.roi_proyectado)}</td>
+                            <td className="num">
+                              <strong style={{ color: (e.techo_puja ?? 0) < 0 ? 'var(--danger)' : 'var(--primary)' }}>{mxn(e.techo_puja)}</strong>
+                              <span className="unidad-folio">ROI {porcentaje(e.roi_proyectado)}</span>
+                            </td>
                           </>
                         ) : (
-                          <td colSpan={4}>
+                          <td colSpan={3}>
                             <button className="btn-link" onClick={() => setEvaluacionModal(e)}>Por evaluar: capturar precio de mercado y reparación</button>
                           </td>
                         )}
                         <td className="acciones-celda">
+                          {subasta.enlace_fotos && e.torre && (
+                            <><button className="btn btn-secundario btn-chico" onClick={() => setViendoFotos(e)}>Fotos</button>{' '}</>
+                          )}
                           <button className="btn btn-primario btn-chico" onClick={() => setAdquiriendo(e)}>Adquirir</button>{' '}
                           <select className="select select-chico" value="" onChange={(ev) => {
                             const accion = ev.target.value
@@ -265,8 +273,18 @@ export default function PosiblesOfertas() {
           onGuardado={(id) => { setCargandoListado(false); setCargando(true); recargar(id) }}
         />
       )}
+      {viendoFotos && subasta?.enlace_fotos && viendoFotos.torre && (
+        <FotosDropboxModal
+          enlace={subasta.enlace_fotos}
+          torre={viendoFotos.torre}
+          stock={viendoFotos.stock}
+          titulo={`${viendoFotos.marca} ${viendoFotos.modelo} ${viendoFotos.anio}`}
+          onClose={() => setViendoFotos(null)}
+        />
+      )}
       {adquiriendo && (
         <AdquirirModal
+          enlaceFotos={subasta?.enlace_fotos ?? null}
           evaluacion={adquiriendo}
           estados={estados}
           ubicaciones={ubicaciones}
@@ -435,7 +453,8 @@ function EvaluacionModal({ subastaId, evaluacion, roiSegmento, onClose, onGuarda
   )
 }
 
-function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido }: {
+function AdquirirModal({ enlaceFotos, evaluacion, estados, ubicaciones, onClose, onAdquirido }: {
+  enlaceFotos: string | null
   evaluacion: EvaluacionPuja
   estados: { id: number; clave: string }[]
   ubicaciones: { id: number; clave: string }[]
@@ -450,6 +469,9 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const puedeCopiar = Boolean(enlaceFotos && evaluacion.torre && dropboxConectado())
+  const [copiar, setCopiar] = useState(puedeCopiar)
+  const [avance, setAvance] = useState<string | null>(null)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -487,6 +509,17 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
 
     await supabase.from('evaluacion_puja').update({ resultado: 'ganada', vehiculo_id: vehiculo.id }).eq('id', evaluacion.id)
 
+    // La unidad ya quedó creada: si falla la copia de Dropbox no se deshace,
+    // solo se avisa (las fotos se pueden subir después desde el Expediente).
+    if (copiar && enlaceFotos && evaluacion.torre) {
+      try {
+        const resumen = await copiarDeDropbox({ enlace: enlaceFotos, torre: evaluacion.torre, stock: evaluacion.stock, vehiculoId: vehiculo.id, onAvance: setAvance })
+        window.alert(resumen)
+      } catch (err) {
+        window.alert(`La unidad se adquirió, pero falló la copia desde Dropbox: ${(err as Error).message}`)
+      }
+    }
+
     setGuardando(false)
     limpiarBorrador()
     onAdquirido(vehiculo.id)
@@ -504,6 +537,13 @@ function AdquirirModal({ evaluacion, estados, ubicaciones, onClose, onAdquirido 
           <Campo label="Comisión de subasta"><input className="input" required type="number" step="0.01" min={0} value={form.comision} onChange={(e) => set('comision', e.target.value)} /></Campo>
         </div>
         <Campo label="Fecha de compra"><input className="input" required type="date" value={form.fechaCompra} onChange={(e) => set('fechaCompra', e.target.value)} /></Campo>
+        {puedeCopiar && (
+          <label className="check">
+            <input type="checkbox" checked={copiar} onChange={(e) => setCopiar(e.target.checked)} />
+            Copiar de Dropbox la hoja de inspección, el REPUVE y 8 fotos
+          </label>
+        )}
+        {avance && guardando && <p className="texto-suave" style={{ margin: 0 }}>{avance}</p>}
         {error && <Alerta>{error}</Alerta>}
         <FormBotones onClose={onClose} guardando={guardando} textoGuardar="Adquirir" />
       </form>
