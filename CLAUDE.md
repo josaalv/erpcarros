@@ -348,7 +348,14 @@ que la integración se hace en el navegador con OAuth PKCE (sin secreto).
    aun con rlkey: las descargas reintentan con la forma oficial del enlace
    (`sharing/get_shared_link_metadata`) y, si Dropbox sigue negando, la
    ventana de Fotos muestra el `error_summary` real (posible "descargas
-   desactivadas" por quien comparte; eso no tiene arreglo por la API). Fotos se ven directo de
+   desactivadas" por quien comparte; eso no tiene arreglo por la API).
+   **Respaldo para esos enlaces** (GDL confirmado `access_denied`, el usuario
+   no puede pedir otro): `VisorEmbebido` en `FotosDropbox.tsx` usa el
+   Embedder oficial (`src/lib/dropboxEmbed.ts`, dropins.js con la App key)
+   y dice el camino a la unidad ("04 Nr Finance › NR 10"; el Embedder no
+   abre subcarpetas directo). Requiere el dominio `josaalv.github.io` en la
+   app de Dropbox → "Chooser / Saver / Embedder domains". Sin descargas no
+   hay miniaturas ni copia de fotos al Adquirir. Fotos se ven directo de
    Dropbox (no se copian).
 3. "Me interesa" crea la evaluación en **Posibles ofertas** con todos los
    datos; de ahí sigue el ciclo (puja → Adquirir). Posibles ofertas ya no
