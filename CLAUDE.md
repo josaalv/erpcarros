@@ -283,7 +283,11 @@ que la integración se hace en el navegador con OAuth PKCE (sin secreto).
   files.metadata.read, files.content.read, sharing.read.
 - UI: Configuración → General "Dropbox" (App key + Conectar);
   Posibles ofertas botón "Fotos" (`FotosDropboxModal`: miniaturas, hoja de
-  inspección y REPUVE, sin guardar nada); "Adquirir" copia hoja de
+  inspección y REPUVE con su primera página, sin guardar nada; visor dentro
+  del sistema: fotos a pantalla completa con flechas/teclado y PDFs
+  dibujados con pdf.js, que también se ven en celular). `descargarDropbox`
+  pone el tipo por extensión: Dropbox manda todo como octet-stream y el
+  navegador lo descargaba como "archivo raro"; "Adquirir" copia hoja de
   inspección (tipo `cotizacion_danos_subasta`), REPUVE (tipo `repuve`) y 8
   fotos reducidas (`src/lib/dropboxUnidad.ts`); si la copia falla la unidad
   NO se deshace.

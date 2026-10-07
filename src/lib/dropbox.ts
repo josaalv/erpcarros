@@ -132,8 +132,16 @@ export async function miniaturaDropbox(enlace: string, ruta: string): Promise<Bl
   return contenido('files/get_thumbnail_v2', { resource: { '.tag': 'link', url: enlace, path: ruta }, format: 'jpeg', size: 'w480h320', mode: 'fitone_bestfit' })
 }
 
+const TIPOS: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', pdf: 'application/pdf' }
+
+/** Tipo del archivo por su extensión (Dropbox lo manda como "octet-stream" y el navegador lo descargaría). */
+export function tipoPorNombre(nombre: string): string {
+  return TIPOS[nombre.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream'
+}
+
 export async function descargarDropbox(enlace: string, ruta: string): Promise<Blob> {
-  return contenido('sharing/get_shared_link_file', { url: enlace, path: ruta })
+  const b = await contenido('sharing/get_shared_link_file', { url: enlace, path: ruta })
+  return new Blob([b], { type: tipoPorNombre(ruta) })
 }
 
 export interface CarpetaUnidad {

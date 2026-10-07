@@ -291,3 +291,20 @@ details.plegable summary { cursor: pointer; color: var(--text-soft); font-weight
 .tarjeta-unidad { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
 .tarjeta-unidad .galeria-foto { border: 0; border-radius: 0; width: 100%; }
 .tarjeta-unidad-pie { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }
+
+/* Visor de fotos / PDF a pantalla completa (encima de los modales) */
+.visor { position: fixed; inset: 0; z-index: 60; background: rgba(10, 14, 25, 0.92); display: flex; flex-direction: column; }
+.visor-barra { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; color: #fff; flex-wrap: wrap; }
+.visor-titulo { font-weight: 600; }
+.visor-acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+.visor-cuerpo { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; padding: 0 16px 16px; }
+.visor-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+.visor-flecha { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 64px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, 0.15); color: #fff; font-size: 40px; line-height: 1; cursor: pointer; }
+.visor-flecha:hover { background: rgba(255, 255, 255, 0.3); }
+.visor-flecha.izq { left: 16px; }
+.visor-flecha.der { right: 16px; }
+.visor-pdf { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 0 16px 16px; }
+.visor-pdf img { width: 100%; max-width: 1000px; background: #fff; border-radius: 4px; }
+.galeria-doc { aspect-ratio: 3 / 4; }
+.galeria-doc img { object-fit: cover; object-position: top; }
+@media (max-width: 640px) { .visor-flecha { width: 40px; height: 52px; font-size: 32px; } .visor-flecha.izq { left: 4px; } .visor-flecha.der { right: 4px; } }
