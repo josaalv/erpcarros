@@ -94,13 +94,28 @@ async function accessToken(): Promise<string> {
 // El encabezado Dropbox-API-Arg solo admite ASCII: acentos y ñ van como \uXXXX.
 const argAscii = (o: unknown) => JSON.stringify(o).replace(/[\u007f-￿]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
 
+/** Mensaje entendible a partir del error de Dropbox (viene como JSON con error_summary). */
+function errorDropbox(ruta: string, status: number, cuerpo: string): string {
+  let resumen = cuerpo.slice(0, 160)
+  try { resumen = (JSON.parse(cuerpo) as { error_summary?: string }).error_summary ?? resumen } catch { /* no era JSON */ }
+  if (/shared_link_(access_denied|not_found)|access_denied/.test(resumen)) {
+    return 'Dropbox no dejó abrir el archivo con ese enlace. Copia de nuevo el enlace COMPLETO de la carpeta (debe incluir "rlkey=…") y guárdalo en la subasta.'
+  }
+  return `Dropbox (${ruta}): ${status} ${resumen}`
+}
+
+/** Un enlace "scl" de carpeta sin rlkey se puede listar pero Dropbox niega descargar sus archivos. */
+export function enlaceSinClave(enlace: string): boolean {
+  try { const u = new URL(enlace); return /dropbox\.com$/.test(u.hostname) && u.pathname.startsWith('/scl/') && !u.searchParams.get('rlkey') } catch { return false }
+}
+
 async function rpc<T>(ruta: string, cuerpo: unknown): Promise<T> {
   const r = await fetch(`https://api.dropboxapi.com/2/${ruta}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(cuerpo),
   })
-  if (!r.ok) throw new Error(`Dropbox (${ruta}): ${r.status} ${(await r.text()).slice(0, 160)}`)
+  if (!r.ok) throw new Error(errorDropbox(ruta, r.status, await r.text()))
   return r.json() as Promise<T>
 }
 
@@ -109,7 +124,7 @@ async function contenido(ruta: string, arg: unknown): Promise<Blob> {
     method: 'POST',
     headers: { Authorization: `Bearer ${await accessToken()}`, 'Dropbox-API-Arg': argAscii(arg) },
   })
-  if (!r.ok) throw new Error(`Dropbox (${ruta}): ${r.status}`)
+  if (!r.ok) throw new Error(errorDropbox(ruta, r.status, await r.text()))
   return r.blob()
 }
 
@@ -191,26 +206,59 @@ export async function carpetasDeVendedor(enlace: string): Promise<(EntradaDropbo
     if (nivel >= 2) return []
     return (await Promise.all(carpetas.slice(0, 20).map((c) => buscar(c.ruta, nivel + 1)))).flat()
   }
-  return buscar('', 0)
+  const encontradas = await buscar('', 0)
+  if (encontradas.length) return encontradas
+  // Carpetas sin número ("FORD CREDIT"): las de la raíz son las de empresa.
+  return (await listarConCache(enlace, '')).filter((e) => e.tipo === 'folder').map((c) => ({ ...c, grupo: '' }))
+}
+
+/** Lo que se sabe de la empresa del listado para encontrar su carpeta. */
+export interface PistaEmpresa { codigo: string; orden?: string | null; vendedor?: string | null }
+
+const PALABRAS_VACIAS = new Set(['SA', 'DE', 'CV', 'SAPI', 'SOFOM', 'ER', 'ENR', 'SC', 'S', 'A', 'C', 'V', 'LA', 'EL', 'Y', 'MEXICO', 'GRUPO', 'SERVICIOS', 'FINANCIERA', 'FINANCIAL', 'LEASING', 'CREDIT', 'FINANCE'])
+const palabras = (s: string) => s.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim().split(' ').filter(Boolean)
+
+/**
+ * Carpetas candidatas para una empresa, de la más a la menos segura:
+ * por código ("01 FC"), por número de orden ("01 FORD CREDIT" para el
+ * listado 01) o por el nombre del vendedor ("FORD"). Si nada coincide se
+ * regresan todas: la unidad se busca entonces por torre o stock en cada una.
+ */
+export function carpetasDeEmpresa<T extends EntradaDropbox>(vendedores: T[], pista: PistaEmpresa): { carpetas: T[]; seguro: boolean } {
+  const codigo = pista.codigo.toUpperCase()
+  const porCodigo = vendedores.filter((v) => palabras(v.nombre).includes(codigo))
+  if (porCodigo.length) return { carpetas: porCodigo, seguro: true }
+  const orden = Number(pista.orden)
+  const porOrden = orden ? vendedores.filter((v) => Number(v.nombre.match(/^\s*(\d{1,3})/)?.[1]) === orden) : []
+  const nombre = palabras(pista.vendedor ?? '').filter((p) => p.length > 2 && !PALABRAS_VACIAS.has(p))
+  const porNombre = nombre.length ? vendedores.filter((v) => palabras(v.nombre).some((p) => nombre.includes(p))) : []
+  const ambos = porOrden.filter((v) => porNombre.includes(v))
+  if (ambos.length) return { carpetas: ambos, seguro: true }
+  if (porOrden.length || porNombre.length) return { carpetas: [...porOrden, ...porNombre.filter((v) => !porOrden.includes(v))], seguro: false }
+  return { carpetas: vendedores, seguro: false }
+}
+
+/** Carpeta de una unidad dentro de la de su empresa: "FC 01" = torre FC-1, o una que lleve su stock en el nombre. */
+export function carpetaDeTorre<T extends EntradaDropbox>(carpetas: T[], torre: string, stock: string | null): T | undefined {
+  return carpetas.find((u) => u.tipo === 'folder' && clave(u.nombre) === clave(torre))
+    ?? carpetas.find((u) => u.tipo === 'folder' && clave(torreDeCarpeta(u.nombre)) === clave(torre))
+    ?? (stock && stock.length >= 4 ? carpetas.find((u) => u.tipo === 'folder' && u.nombre.includes(stock)) : undefined)
 }
 
 /**
- * Busca la carpeta de una unidad: la de su vendedor ("01 FC" para torres
- * FC-n) y dentro la de su torre ("FC 01" = "FC-1"). Confirma con el número
- * de stock en los nombres de archivo; si hay varias (un enlace general con
- * varios patios) se queda con la que trae su stock; si ninguna lo trae, lo
- * reporta en coincideStock para que la pantalla avise.
+ * Busca la carpeta de una unidad: la de su empresa (ver carpetasDeEmpresa)
+ * y dentro la de su torre. Confirma con el número de stock en los nombres de
+ * archivo; si hay varias (enlace general con varios patios) se queda con la
+ * que trae su stock; si ninguna lo trae, lo reporta en coincideStock.
  */
-export async function buscarCarpetaUnidad(enlace: string, torre: string, stock: string | null): Promise<CarpetaUnidad | null> {
-  const prefijo = torre.split('-')[0].toUpperCase()
+export async function buscarCarpetaUnidad(enlace: string, torre: string, stock: string | null, pista?: PistaEmpresa): Promise<CarpetaUnidad | null> {
   const vendedores = await carpetasDeVendedor(enlace)
-  const candidatos = vendedores.filter((v) => v.nombre.toUpperCase().replace(/[-_.]/g, ' ').split(/\s+/).includes(prefijo))
-  // Si no hay carpeta por vendedor, las unidades pueden estar directo en la raíz.
-  const dondeBuscar = candidatos.length ? candidatos.map((c) => c.ruta) : ['']
+  const { carpetas } = carpetasDeEmpresa(vendedores, pista ?? { codigo: torre.split('-')[0] })
+  // Primero las candidatas; después el resto (nombres inesperados); al final la raíz.
+  const orden = [...carpetas.map((c) => c.ruta), ...vendedores.filter((v) => !carpetas.includes(v)).map((v) => v.ruta), '']
   let primera: CarpetaUnidad | null = null
-  for (const ruta of dondeBuscar) {
-    const unidades = await listarConCache(enlace, ruta)
-    const carpeta = unidades.find((u) => u.tipo === 'folder' && clave(u.nombre) === clave(torre))
+  for (const ruta of orden) {
+    const carpeta = carpetaDeTorre(await listarConCache(enlace, ruta), torre, stock)
     if (!carpeta) continue
     const archivos = (await listarConCache(enlace, carpeta.ruta)).filter((a) => a.tipo === 'file')
     const pdfs = archivos.filter((a) => /\.pdf$/i.test(a.nombre))

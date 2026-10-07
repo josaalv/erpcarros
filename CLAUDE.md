@@ -337,7 +337,13 @@ que la integración se hace en el navegador con OAuth PKCE (sin secreto).
    Prosubastas sube más fotos: guardar uno nuevo vuelve a ligar solo, y
    puede ser una carpeta general (`carpetasDeVendedor` busca las "01 FC"
    hasta 2 niveles abajo; con varias "FC" gana la que trae el stock). La
-   lectura de carpetas se guarda solo 3 min para que aparezca lo nuevo. Fotos se ven directo de
+   lectura de carpetas se guarda solo 3 min para que aparezca lo nuevo.
+   **Las carpetas de empresa no siempre llevan el código**: en GDL son
+   "04 Nr Finance", "01 Ford Credit"… `carpetasDeEmpresa` busca por código,
+   luego por número de orden + nombre del vendedor y, si nada, en todas
+   (la unidad se confirma por torre o stock). **El enlace debe traer
+   `rlkey=`**: sin él Dropbox deja listar pero las descargas/miniaturas dan
+   409; la app ya no deja guardar enlaces "scl" sin rlkey. Fotos se ven directo de
    Dropbox (no se copian).
 3. "Me interesa" crea la evaluación en **Posibles ofertas** con todos los
    datos; de ahí sigue el ciclo (puja → Adquirir). Posibles ofertas ya no
