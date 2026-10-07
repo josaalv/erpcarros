@@ -7,7 +7,7 @@ import { buscarListados, descargarListado, type ArchivoListado } from '../lib/pr
 import { importarListado, type ResultadoImportacion } from '../lib/catalogoSubastas'
 import { dropboxConectado, listarConCache, torreDeCarpeta } from '../lib/dropbox'
 import { PageHeader, Modal, Campo, Alerta, Cargando, Badge, Kpi } from '../components/Ui'
-import { FotosDropboxModal } from '../components/FotosDropbox'
+import { ConectarDropbox, FotosDropboxModal } from '../components/FotosDropbox'
 import type { Subasta, SubastaListado, SubastaUnidad, EvaluacionPuja } from '../types'
 
 type EvaluacionLigada = Pick<EvaluacionPuja, 'id' | 'subasta_unidad_id' | 'resultado' | 'vehiculo_id'>
@@ -226,7 +226,7 @@ export default function Subastas() {
                 {subasta.enlace_fotos && enlaceFotos.trim() === subasta.enlace_fotos && (
                   dropboxConectado()
                     ? <button className="btn btn-primario" disabled={Boolean(vinculando)} onClick={vincularFotos}>{vinculando ?? `Ligar fotos (${conFotos}/${unidades.length})`}</button>
-                    : <span className="texto-suave">Conecta Dropbox en Configuración → General para ligar las fotos.</span>
+                    : <><span className="texto-suave">Para ligar y ver las fotos, conecta Dropbox en este navegador:</span> <ConectarDropbox /></>
                 )}
               </div>
             </div>

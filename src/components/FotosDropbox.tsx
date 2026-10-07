@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { buscarCarpetaUnidad, descargarDropbox, dropboxConectado, miniaturaDropbox, type CarpetaUnidad } from '../lib/dropbox'
+import { buscarCarpetaUnidad, conectarDropbox, descargarDropbox, dropboxConectado, miniaturaDropbox, type CarpetaUnidad } from '../lib/dropbox'
+import { useParametros } from '../lib/parametros'
 import { Modal, Alerta, Cargando } from './Ui'
 
 /** Abre un Blob en otra pestaña (la pestaña se abre antes del await para que no la bloqueen). */
@@ -14,6 +15,30 @@ async function abrirBlob(obtener: () => Promise<Blob>) {
     ventana?.close()
     throw e
   }
+}
+
+/**
+ * Conecta Dropbox desde donde esté el usuario (sale a Dropbox y regresa a la
+ * misma pantalla). Si aún no hay App key, manda a Configuración.
+ */
+export function ConectarDropbox({ texto = 'Conectar Dropbox' }: { texto?: string }) {
+  const { dropbox_app_key } = useParametros()
+  const [error, setError] = useState<string | null>(() => {
+    const e = sessionStorage.getItem('dropbox:error')
+    sessionStorage.removeItem('dropbox:error')
+    return e
+  })
+  const [abriendo, setAbriendo] = useState(false)
+  if (!dropbox_app_key) return <span className="texto-suave">Falta la App key de Dropbox: ponla en <Link to="/configuracion">Configuración → General</Link>.</span>
+  return (
+    <>
+      <button type="button" className="btn btn-primario" disabled={abriendo}
+        onClick={() => { setAbriendo(true); conectarDropbox(dropbox_app_key).catch((e) => { setAbriendo(false); setError((e as Error).message) }) }}>
+        {abriendo ? 'Abriendo Dropbox…' : texto}
+      </button>
+      {error && <span className="texto-peligro">{error}</span>}
+    </>
+  )
 }
 
 /**
@@ -58,10 +83,13 @@ export function FotosDropboxModal({ enlace, torre, stock, titulo, onClose }: {
   return (
     <Modal titulo={`Fotos · ${titulo}`} subtitulo={`Torre ${torre}${stock ? ` · stock ${stock}` : ''} · desde Dropbox`} ancho={980} onClose={onClose}>
       {!conectado ? (
-        <Alerta tipo="aviso">
-          Dropbox no está conectado en este navegador. Conéctalo en <Link to="/configuracion" onClick={onClose}>Configuración → General</Link>.
-          {' '}Mientras tanto puedes <a href={enlace} target="_blank" rel="noreferrer">abrir la carpeta de la subasta en Dropbox ↗</a>.
-        </Alerta>
+        <div className="form">
+          <Alerta tipo="aviso">
+            Para ver las fotos aquí, conecta Dropbox en este navegador (se hace una sola vez; te pide entrar a tu cuenta de Dropbox y regresa a esta pantalla).
+            {' '}Mientras tanto puedes <a href={enlace} target="_blank" rel="noreferrer">abrir la carpeta de la subasta en Dropbox ↗</a>.
+          </Alerta>
+          <div className="form-acciones" style={{ alignItems: 'center' }}><ConectarDropbox /></div>
+        </div>
       ) : error ? (
         <Alerta>{error}</Alerta>
       ) : carpeta === undefined ? (
