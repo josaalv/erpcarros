@@ -153,47 +153,80 @@ export interface CarpetaUnidad {
   coincideStock: boolean
 }
 
-// Cache por enlace: abrir varias unidades de la misma subasta no vuelve a listar la raíz.
-const cacheCarpetas = new Map<string, Promise<EntradaDropbox[]>>()
+// Cache por enlace: abrir varias unidades de la misma subasta no vuelve a
+// listar la raíz. Dura 3 minutos: las carpetas se van llenando conforme
+// Prosubastas sube fotos, y lo nuevo debe aparecer sin recargar la página.
+const cacheCarpetas = new Map<string, { hasta: number; p: Promise<EntradaDropbox[]> }>()
 export const listarConCache = (enlace: string, ruta: string) => {
   const k = `${enlace}|${ruta}`
-  if (!cacheCarpetas.has(k)) cacheCarpetas.set(k, listarCarpeta(enlace, ruta).catch((e) => { cacheCarpetas.delete(k); throw e }))
-  return cacheCarpetas.get(k)!
+  const hit = cacheCarpetas.get(k)
+  if (hit && hit.hasta > Date.now()) return hit.p
+  const p = listarCarpeta(enlace, ruta).catch((e) => { cacheCarpetas.delete(k); throw e })
+  cacheCarpetas.set(k, { hasta: Date.now() + 3 * 60_000, p })
+  return p
+}
+
+/** Olvida lo leído de un enlace (al volver a ligar: puede haber carpetas nuevas). */
+export function olvidarCarpetas(enlace: string) {
+  for (const k of [...cacheCarpetas.keys()]) if (k.startsWith(`${enlace}|`)) cacheCarpetas.delete(k)
 }
 
 const sinCeros = (s: string) => s.replace(/\b0+(\d)/g, '$1')
 const clave = (s: string) => sinCeros(s.toUpperCase().replace(/[\s_-]+/g, ' ').trim())
 
+/** "01 FC", "07 GA", "11. MLS"… = carpeta de una empresa vendedora. */
+const esCarpetaVendedor = (nombre: string) => /^\d{1,3}\s*[-_.]?\s*[A-Za-z]/.test(nombre.trim())
+
+/**
+ * Carpetas de empresa vendedora del enlace. Normalmente están en la raíz,
+ * pero el enlace también puede ser una carpeta general (p. ej. una por patio
+ * o por fecha, que se va llenando): entonces se buscan hasta dos niveles
+ * abajo. `grupo` es la carpeta que las contiene ('' si están en la raíz).
+ */
+export async function carpetasDeVendedor(enlace: string): Promise<(EntradaDropbox & { grupo: string })[]> {
+  const buscar = async (ruta: string, nivel: number): Promise<(EntradaDropbox & { grupo: string })[]> => {
+    const carpetas = (await listarConCache(enlace, ruta)).filter((e) => e.tipo === 'folder')
+    const vendedores = carpetas.filter((c) => esCarpetaVendedor(c.nombre))
+    if (vendedores.length) return vendedores.map((v) => ({ ...v, grupo: ruta.split('/').filter(Boolean).join(' / ') }))
+    if (nivel >= 2) return []
+    return (await Promise.all(carpetas.slice(0, 20).map((c) => buscar(c.ruta, nivel + 1)))).flat()
+  }
+  return buscar('', 0)
+}
+
 /**
  * Busca la carpeta de una unidad: la de su vendedor ("01 FC" para torres
  * FC-n) y dentro la de su torre ("FC 01" = "FC-1"). Confirma con el número
- * de stock en los nombres de archivo; si no aparece, lo reporta en
- * coincideStock para que la pantalla avise (puede ser otro patio u otra fecha).
+ * de stock en los nombres de archivo; si hay varias (un enlace general con
+ * varios patios) se queda con la que trae su stock; si ninguna lo trae, lo
+ * reporta en coincideStock para que la pantalla avise.
  */
 export async function buscarCarpetaUnidad(enlace: string, torre: string, stock: string | null): Promise<CarpetaUnidad | null> {
   const prefijo = torre.split('-')[0].toUpperCase()
-  const raiz = await listarConCache(enlace, '')
-  const vendedores = raiz.filter((e) => e.tipo === 'folder')
-  const candidatos = vendedores.filter((v) => v.nombre.toUpperCase().split(/\s+/).includes(prefijo))
+  const vendedores = await carpetasDeVendedor(enlace)
+  const candidatos = vendedores.filter((v) => v.nombre.toUpperCase().replace(/[-_.]/g, ' ').split(/\s+/).includes(prefijo))
   // Si no hay carpeta por vendedor, las unidades pueden estar directo en la raíz.
-  const dondeBuscar = candidatos.length ? candidatos : [{ ruta: '', nombre: '', tipo: 'folder' as const }]
-  for (const v of dondeBuscar) {
-    const unidades = v.ruta === '' ? raiz : await listarConCache(enlace, v.ruta)
+  const dondeBuscar = candidatos.length ? candidatos.map((c) => c.ruta) : ['']
+  let primera: CarpetaUnidad | null = null
+  for (const ruta of dondeBuscar) {
+    const unidades = await listarConCache(enlace, ruta)
     const carpeta = unidades.find((u) => u.tipo === 'folder' && clave(u.nombre) === clave(torre))
     if (!carpeta) continue
     const archivos = (await listarConCache(enlace, carpeta.ruta)).filter((a) => a.tipo === 'file')
     const pdfs = archivos.filter((a) => /\.pdf$/i.test(a.nombre))
     const repuve = pdfs.find((a) => /repuve/i.test(a.nombre)) ?? null
     const inspeccion = pdfs.find((a) => a !== repuve && (!stock || a.nombre.startsWith(stock))) ?? pdfs.find((a) => a !== repuve) ?? null
-    return {
+    const encontrada: CarpetaUnidad = {
       ruta: carpeta.ruta,
       fotos: archivos.filter((a) => /\.(jpe?g|png|webp|heic)$/i.test(a.nombre)).sort((a, b) => a.nombre.localeCompare(b.nombre)),
       inspeccion,
       repuve,
       coincideStock: !stock || archivos.some((a) => a.nombre.includes(stock)),
     }
+    if (encontrada.coincideStock) return encontrada
+    primera ??= encontrada
   }
-  return null
+  return primera
 }
 
 /** Reduce una foto a máx. `lado` px (JPEG) para no llenar el Storage gratuito (1 GB). */
@@ -220,11 +253,14 @@ export interface UnidadDropbox {
   fotos: EntradaDropbox[]
 }
 
-/** Carpetas de vendedor de la subasta ("01 FC" → código FC). */
+/** Carpetas de vendedor de la subasta ("01 FC" → código FC; con el patio delante si el enlace trae varios). */
 export async function vendedoresDropbox(enlace: string): Promise<{ carpeta: EntradaDropbox; codigo: string }[]> {
-  const raiz = await listarConCache(enlace, '')
-  return raiz.filter((e) => e.tipo === 'folder')
-    .map((carpeta) => ({ carpeta, codigo: carpeta.nombre.replace(/^\d+\s*/, '').trim() || carpeta.nombre }))
+  const carpetas = await carpetasDeVendedor(enlace)
+  const varios = new Set(carpetas.map((c) => c.grupo)).size > 1
+  return carpetas.map(({ grupo, ...carpeta }) => {
+    const codigo = carpeta.nombre.replace(/^\d+\s*[-_.]?\s*/, '').trim() || carpeta.nombre
+    return { carpeta, codigo: varios && grupo ? `${grupo.split(' / ').pop()} · ${codigo}` : codigo }
+  })
 }
 
 /** Unidades dentro de la carpeta de un vendedor, con su stock (del nombre del PDF) y sus fotos. */

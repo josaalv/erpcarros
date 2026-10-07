@@ -333,7 +333,11 @@ que la integración se hace en el navegador con OAuth PKCE (sin secreto).
    También se pueden subir los PDF a mano.
 2. Por subasta: enlace de fotos del patio (Dropbox) y "Ligar fotos" (cada
    empresa con su carpeta "01 FC", cada unidad con "FC 01" confirmando el
-   stock; avisa si es el Dropbox de otro patio). Fotos se ven directo de
+   stock; avisa si es el Dropbox de otro patio). El enlace cambia conforme
+   Prosubastas sube más fotos: guardar uno nuevo vuelve a ligar solo, y
+   puede ser una carpeta general (`carpetasDeVendedor` busca las "01 FC"
+   hasta 2 niveles abajo; con varias "FC" gana la que trae el stock). La
+   lectura de carpetas se guarda solo 3 min para que aparezca lo nuevo. Fotos se ven directo de
    Dropbox (no se copian).
 3. "Me interesa" crea la evaluación en **Posibles ofertas** con todos los
    datos; de ahí sigue el ciclo (puja → Adquirir). Posibles ofertas ya no
