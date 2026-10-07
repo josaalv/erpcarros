@@ -343,7 +343,12 @@ que la integración se hace en el navegador con OAuth PKCE (sin secreto).
    luego por número de orden + nombre del vendedor y, si nada, en todas
    (la unidad se confirma por torre o stock). **El enlace debe traer
    `rlkey=`**: sin él Dropbox deja listar pero las descargas/miniaturas dan
-   409; la app ya no deja guardar enlaces "scl" sin rlkey. Fotos se ven directo de
+   409; la app ya no deja guardar enlaces "scl" sin rlkey.
+   El enlace de GDL ("…/h?rlkey=…") lista bien pero las descargas dan 409
+   aun con rlkey: las descargas reintentan con la forma oficial del enlace
+   (`sharing/get_shared_link_metadata`) y, si Dropbox sigue negando, la
+   ventana de Fotos muestra el `error_summary` real (posible "descargas
+   desactivadas" por quien comparte; eso no tiene arreglo por la API). Fotos se ven directo de
    Dropbox (no se copian).
 3. "Me interesa" crea la evaluación en **Posibles ofertas** con todos los
    datos; de ahí sigue el ciclo (puja → Adquirir). Posibles ofertas ya no
