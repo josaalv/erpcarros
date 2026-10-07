@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { buscarCarpetaUnidad, conectarDropbox, descargarDropbox, dropboxConectado, enlaceSinClave, miniaturaDropbox, type CarpetaUnidad, type EntradaDropbox, type PistaEmpresa } from '../lib/dropbox'
+import { buscarCarpetaUnidad, conectarDropbox, descargarDropbox, dropboxConectado, enlaceSinClave, esSinDescargas, miniaturaDropbox, type CarpetaUnidad, type EntradaDropbox, type PistaEmpresa } from '../lib/dropbox'
 import { cargarPdfjs } from '../lib/contratoPdf'
 import { miniatura } from '../lib/miniatura'
 import { useParametros } from '../lib/parametros'
+import { cargarEmbedder } from '../lib/dropboxEmbed'
 import { Modal, Alerta, Cargando } from './Ui'
 
 /**
@@ -132,7 +133,9 @@ export function FotosDropboxModal({ enlace, torre, stock, titulo, pista, onClose
           No hay una carpeta para la torre {torre} en esta subasta de Dropbox. <a href={enlace} target="_blank" rel="noreferrer">Abrir la carpeta ↗</a>
         </Alerta>
       ) : (
-        <>
+        esSinDescargas(errorFotos) && Object.keys(miniaturas).length === 0 ? (
+          <VisorEmbebido enlace={enlace} ruta={carpeta.ruta} fotos={carpeta.fotos.length} />
+        ) : <>
           {errorFotos && Object.keys(miniaturas).length === 0 && (
             <div style={{ marginBottom: 12 }}>
               <Alerta tipo="aviso">
@@ -314,5 +317,48 @@ function VisorPdf({ titulo, archivo, obtener, onClose }: {
         {error ? <Alerta>{error}</Alerta> : paginas.length === 0 ? <Cargando /> : paginas.map((p, i) => <img key={i} src={p} alt={`${titulo} · página ${i + 1}`} />)}
       </div>
     </Visor>
+  )
+}
+
+/**
+ * Respaldo cuando la carpeta compartida tiene las descargas desactivadas:
+ * el visor oficial de Dropbox incrustado. No se puede abrir directo en la
+ * subcarpeta de la unidad, así que se indica el camino a seguir.
+ */
+function VisorEmbebido({ enlace, ruta, fotos }: { enlace: string; ruta: string; fotos: number }) {
+  const { dropbox_app_key } = useParametros()
+  const caja = useRef<HTMLDivElement>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!dropbox_app_key || !caja.current) return
+    let vivo = true
+    let embed: unknown = null
+    let api: { unmount: (e: unknown) => void } | null = null
+    cargarEmbedder(dropbox_app_key)
+      .then((dbx) => {
+        if (!vivo || !caja.current) return
+        api = dbx
+        embed = dbx.embed({ link: enlace, file: { zoom: 'best' }, folder: { view: 'grid', headerSize: 'small' } }, caja.current)
+      })
+      .catch((e) => { if (vivo) setError((e as Error).message) })
+    return () => { vivo = false; if (api && embed) api.unmount(embed) }
+  }, [dropbox_app_key, enlace])
+
+  const pasos = ruta.split('/').filter(Boolean)
+  return (
+    <div className="form">
+      <Alerta tipo="aviso">
+        Prosubastas compartió esta carpeta con las descargas desactivadas: las fotos solo se pueden ver en el visor de Dropbox
+        ({fotos} fotos). Entra a <strong>{pasos.join(' › ')}</strong>.
+      </Alerta>
+      {error ? <Alerta>{error} <a href={enlace} target="_blank" rel="noreferrer">Abrir la carpeta en Dropbox ↗</a></Alerta>
+        : <div ref={caja} className="visor-embebido" />}
+      <p className="texto-suave" style={{ margin: 0 }}>
+        Si el recuadro sale vacío o con error, falta registrar <code>{window.location.hostname}</code> en tu app de Dropbox
+        (pestaña Settings → "Chooser / Saver / Embedder domains").{' '}
+        <a href={enlace} target="_blank" rel="noreferrer">Abrir en Dropbox ↗</a>
+      </p>
+    </div>
   )
 }

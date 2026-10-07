@@ -94,12 +94,16 @@ async function accessToken(): Promise<string> {
 // El encabezado Dropbox-API-Arg solo admite ASCII: acentos y ñ van como \uXXXX.
 const argAscii = (o: unknown) => JSON.stringify(o).replace(/[\u007f-￿]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
 
+const SIN_DESCARGAS = 'Dropbox no deja descargar archivos de esta carpeta compartida: quien la comparte desactivó las descargas'
+/** true si el error es por descargas desactivadas (se puede ver en el visor de Dropbox, no bajar). */
+export const esSinDescargas = (mensaje: string | null | undefined) => Boolean(mensaje?.startsWith(SIN_DESCARGAS))
+
 /** Mensaje entendible a partir del error de Dropbox (viene como JSON con error_summary). */
 function errorDropbox(ruta: string, status: number, cuerpo: string): string {
   let resumen = cuerpo.slice(0, 160)
   try { resumen = (JSON.parse(cuerpo) as { error_summary?: string }).error_summary ?? resumen } catch { /* no era JSON */ }
   if (/access_denied|not_found|disallowed|download/i.test(resumen)) {
-    return `Dropbox no deja descargar archivos de esta carpeta compartida (${resumen.replace(/\/\.+$/, '')}). Suele pasar cuando quien la comparte desactivó las descargas: se puede ver en Dropbox, pero no desde otra aplicación.`
+    return `${SIN_DESCARGAS} (${resumen.replace(/\/\.+$/, '')}).`
   }
   return `Dropbox (${ruta}): ${status} ${resumen}`
 }
