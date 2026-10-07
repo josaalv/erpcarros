@@ -5,7 +5,7 @@ import { useParametros } from '../lib/parametros'
 import { mxn, km, fecha, TRANSMISION_LABEL } from '../lib/helpers'
 import { buscarListados, descargarListado, type ArchivoListado } from '../lib/prosubastas'
 import { importarListado, type ResultadoImportacion } from '../lib/catalogoSubastas'
-import { dropboxConectado, listarConCache, torreDeCarpeta } from '../lib/dropbox'
+import { carpetasDeVendedor, dropboxConectado, olvidarCarpetas, listarConCache, torreDeCarpeta } from '../lib/dropbox'
 import { PageHeader, Modal, Campo, Alerta, Cargando, Badge, Kpi } from '../components/Ui'
 import { ConectarDropbox, FotosDropboxModal } from '../components/FotosDropbox'
 import type { Subasta, SubastaListado, SubastaUnidad, EvaluacionPuja } from '../types'
@@ -103,51 +103,72 @@ export default function Subastas() {
 
   async function guardarEnlaceFotos() {
     if (!supabase || !subasta) return
-    const { error: err } = await supabase.from('subasta').update({ enlace_fotos: enlaceFotos.trim() || null }).eq('id', subasta.id)
+    const enlace = enlaceFotos.trim() || null
+    const { error: err } = await supabase.from('subasta').update({ enlace_fotos: enlace }).eq('id', subasta.id)
     if (err) { setError(err.message); return }
     await cargarSubastas(subasta.id)
-    setAviso('Enlace de fotos guardado.')
+    // Con un enlace nuevo, las unidades se vuelven a ligar solas (si Dropbox está conectado).
+    if (enlace && dropboxConectado()) await vincularFotos(enlace)
+    else setAviso('Enlace de fotos guardado.')
   }
 
   /**
    * Liga cada empresa con su carpeta del Dropbox del patio ("01 FC") y cada
    * unidad con la de su torre ("FC 01"), confirmando con el stock, y anota
    * cuántas fotos tiene. Las fotos no se copian: se ven directo de Dropbox.
+   * El enlace puede ser una carpeta general (varios patios o fechas): si hay
+   * varias carpetas "FC", gana la que trae el stock de la unidad.
    */
-  async function vincularFotos() {
-    if (!supabase || !subasta?.enlace_fotos) return
+  async function vincularFotos(enlace = subasta?.enlace_fotos) {
+    if (!supabase || !enlace) return
     setError(null)
     setAviso(null)
     try {
       setVinculando('Leyendo carpetas…')
-      const raiz = (await listarConCache(subasta.enlace_fotos, '')).filter((e) => e.tipo === 'folder')
+      olvidarCarpetas(enlace)
+      const vendedores = await carpetasDeVendedor(enlace)
       let ligadas = 0
       let sinCarpeta = 0
       let otroStock = 0
       for (const l of listados) {
-        const carpeta = raiz.find((c) => c.nombre.toUpperCase().split(/\s+/).includes(l.codigo.toUpperCase()))
-        await supabase.from('subasta_listado').update({ carpeta_fotos: carpeta?.ruta ?? null }).eq('id', l.id)
+        const codigo = l.codigo.toUpperCase()
         const deEmpresa = unidades.filter((u) => u.listado_id === l.id)
-        if (!carpeta) { sinCarpeta += deEmpresa.length; continue }
-        const sub = (await listarConCache(subasta.enlace_fotos, carpeta.ruta)).filter((e) => e.tipo === 'folder')
+        const candidatas = vendedores.filter((c) => c.nombre.toUpperCase().replace(/[-_.]/g, ' ').split(/\s+/).includes(codigo))
+        if (!candidatas.length) {
+          await supabase.from('subasta_listado').update({ carpeta_fotos: null }).eq('id', l.id)
+          await supabase.from('subasta_unidad').update({ carpeta_fotos: null, fotos_total: null }).eq('listado_id', l.id)
+          sinCarpeta += deEmpresa.length
+          continue
+        }
+        const subcarpetas = await Promise.all(candidatas.map(async (c) => ({
+          empresa: c, torres: (await listarConCache(enlace, c.ruta)).filter((e) => e.tipo === 'folder'),
+        })))
+        const usadas = new Map<string, number>()
         for (let i = 0; i < deEmpresa.length; i += 6) {
           setVinculando(`${l.codigo}: ${Math.min(i + 6, deEmpresa.length)} de ${deEmpresa.length}…`)
           await Promise.all(deEmpresa.slice(i, i + 6).map(async (u) => {
-            const c = sub.find((x) => torreDeCarpeta(x.nombre).toUpperCase() === u.torre.toUpperCase())
-            if (!c) { sinCarpeta++; return supabase!.from('subasta_unidad').update({ carpeta_fotos: null, fotos_total: null }).eq('id', u.id) }
-            const archivos = (await listarConCache(subasta.enlace_fotos!, c.ruta)).filter((a) => a.tipo === 'file')
-            if (u.stock && !archivos.some((a) => a.nombre.includes(u.stock!))) {
-              otroStock++
-              return supabase!.from('subasta_unidad').update({ carpeta_fotos: null, fotos_total: null }).eq('id', u.id)
+            let hallada = false
+            for (const { empresa, torres } of subcarpetas) {
+              const c = torres.find((x) => torreDeCarpeta(x.nombre).toUpperCase() === u.torre.toUpperCase())
+              if (!c) continue
+              hallada = true
+              const archivos = (await listarConCache(enlace, c.ruta)).filter((a) => a.tipo === 'file')
+              if (u.stock && !archivos.some((a) => a.nombre.includes(u.stock!))) continue
+              ligadas++
+              usadas.set(empresa.ruta, (usadas.get(empresa.ruta) ?? 0) + 1)
+              return supabase!.from('subasta_unidad').update({
+                carpeta_fotos: c.ruta, fotos_total: archivos.filter((a) => /\.(jpe?g|png|webp)$/i.test(a.nombre)).length,
+              }).eq('id', u.id)
             }
-            ligadas++
-            return supabase!.from('subasta_unidad').update({
-              carpeta_fotos: c.ruta, fotos_total: archivos.filter((a) => /\.(jpe?g|png|webp)$/i.test(a.nombre)).length,
-            }).eq('id', u.id)
+            if (hallada) otroStock++
+            else sinCarpeta++
+            return supabase!.from('subasta_unidad').update({ carpeta_fotos: null, fotos_total: null }).eq('id', u.id)
           }))
         }
+        const principal = [...usadas.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? candidatas[0].ruta
+        await supabase.from('subasta_listado').update({ carpeta_fotos: principal }).eq('id', l.id)
       }
-      setAviso(`Fotos ligadas: ${ligadas} unidades.${sinCarpeta ? ` ${sinCarpeta} sin carpeta en ese Dropbox.` : ''}${otroStock ? ` ${otroStock} con carpeta de otro stock (¿es el Dropbox de otro patio?).` : ''}`)
+      setAviso(`Fotos ligadas: ${ligadas} unidades.${sinCarpeta ? ` ${sinCarpeta} todavía sin carpeta en ese Dropbox (si van subiendo más, vuelve a presionar "Ligar fotos" después).` : ''}${otroStock ? ` ${otroStock} con carpeta de otro stock (¿es el Dropbox de otro patio?).` : ''}`)
     } catch (e) {
       setError(`No se pudieron ligar las fotos: ${(e as Error).message}`)
     }
@@ -225,7 +246,7 @@ export default function Subastas() {
                 {enlaceFotos.trim() !== (subasta.enlace_fotos ?? '') && <button className="btn btn-secundario" onClick={guardarEnlaceFotos}>Guardar enlace</button>}
                 {subasta.enlace_fotos && enlaceFotos.trim() === subasta.enlace_fotos && (
                   dropboxConectado()
-                    ? <button className="btn btn-primario" disabled={Boolean(vinculando)} onClick={vincularFotos}>{vinculando ?? `Ligar fotos (${conFotos}/${unidades.length})`}</button>
+                    ? <button className="btn btn-primario" disabled={Boolean(vinculando)} onClick={() => vincularFotos()}>{vinculando ?? `Ligar fotos (${conFotos}/${unidades.length})`}</button>
                     : <><span className="texto-suave">Para ligar y ver las fotos, conecta Dropbox en este navegador:</span> <ConectarDropbox /></>
                 )}
               </div>
