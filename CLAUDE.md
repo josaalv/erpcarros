@@ -315,8 +315,11 @@ que la integración se hace en el navegador con OAuth PKCE (sin secreto).
 1. **Subastas** (`src/screens/Subastas.tsx`, primera del menú del ciclo):
    "Importar desde Prosubastas" acepta el enlace de un PDF, de la carpeta de
    un patio (`/subastas/2026_10_09/GDL/`) o de la fecha completa
-   (`/subastas/2026_10_09/` → entra a GDL/, TOL/, MID/; ignora subcarpetas
-   como "1er/"). El índice de prosubastas.com.mx es público (Apache) pero
+   (`/subastas/2026_10_09/` → entra a GDL/, TOL/, MID/). **Pegar un solo
+   PDF trae TODAS las empresas de su patio** (el usuario quiere el registro
+   completo; antes solo importaba ese PDF). Las subcarpetas "1er/", "2do/"
+   son avances anteriores; los PDF sueltos del patio son el listado final:
+   se usa el final, o el avance más alto si el patio aún no tiene final. El índice de prosubastas.com.mx es público (Apache) pero
    sin CORS: se lee por la **Edge Function `prosubastas`**
    (`supabase/functions/prosubastas/`, verify_jwt + exige `role =
    authenticated` en el JWT, solo `https://prosubastas.com.mx/subastas/`,

@@ -365,7 +365,7 @@ function ImportarModal({ onClose, onTerminado }: { onClose: () => void; onTermin
   const porPatio = (archivos ?? []).reduce<Record<string, ArchivoListado[]>>((acc, a) => { (acc[a.patio || 'Archivo'] ??= []).push(a); return acc }, {})
 
   return (
-    <Modal titulo="Importar listados de Prosubastas" subtitulo="Pega el enlace de un PDF, de la carpeta de un patio o de la carpeta de la fecha." ancho={820} onClose={onClose}>
+    <Modal titulo="Importar listados de Prosubastas" subtitulo="Pega el enlace de cualquier PDF del patio (trae todas sus empresas), de la carpeta del patio o de la fecha (todos los patios)." ancho={820} onClose={onClose}>
       {terminado ? (
         <div className="form">
           <div className="tabla-wrap">
@@ -400,7 +400,7 @@ function ImportarModal({ onClose, onTerminado }: { onClose: () => void; onTermin
             <>
               {Object.entries(porPatio).map(([patio, lista]) => (
                 <div key={patio}>
-                  <div className="card-titulo" style={{ fontSize: 15 }}>{patio} · {lista.length} listados</div>
+                  <div className="card-titulo" style={{ fontSize: 15 }}>{patio} · {lista.length} empresas · {lista[0].version}</div>
                   {lista.map((a) => (
                     <label key={a.url} className="check" style={{ display: 'flex', margin: '4px 0' }}>
                       <input type="checkbox" checked={elegidos.has(a.url)} disabled={Boolean(progreso)}

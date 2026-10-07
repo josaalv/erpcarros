@@ -7,7 +7,10 @@ import { supabase } from './supabase'
  *   /subastas/2026_10_09/            → una carpeta por patio (GDL/, TOL/, MID/)
  *   /subastas/2026_10_09/GDL/        → un PDF por empresa vendedora
  *   /subastas/2026_10_09/GDL/01.-FC_GDL-Listado de Unidades (…).pdf
- * Las subcarpetas dentro de un patio (p. ej. "1er/") se ignoran.
+ * Dentro de un patio, las subcarpetas "1er/", "2do/"… son avances anteriores
+ * del listado; los PDF sueltos en la carpeta del patio son el listado final
+ * de participación. Se usa siempre la versión más reciente: la del patio si
+ * tiene PDFs, si no el avance más alto.
  */
 
 const BASE = 'https://prosubastas.com.mx/subastas/'
@@ -21,6 +24,8 @@ export interface ArchivoListado {
   fecha: string
   /** Número al inicio del archivo ("01"), igual al de la carpeta de fotos ("01 FC"). */
   orden: string
+  /** "Listado final", "2do avance"… (de qué carpeta salió). */
+  version: string
 }
 
 async function traer(url: string): Promise<Response> {
@@ -52,15 +57,37 @@ function enlaces(html: string, carpeta: string): { pdfs: string[]; carpetas: str
   }
 }
 
-function archivo(url: string): ArchivoListado {
+function archivo(url: string, version: string): ArchivoListado {
   const nombre = decodeURIComponent(url.split('/').pop() ?? '')
   const { fecha, patio } = datosDeUrl(url)
-  return { url, nombre, patio, fecha, orden: nombre.match(/^(\d{1,3})/)?.[1]?.padStart(2, '0') ?? '' }
+  return { url, nombre, patio, fecha, orden: nombre.match(/^(\d{1,3})/)?.[1]?.padStart(2, '0') ?? '', version }
+}
+
+/** Número del avance ("1er/" → 1, "2do/" → 2); 0 si no empieza con número. */
+function numeroAvance(carpeta: string): number {
+  return Number(decodeURIComponent(carpeta).replace(/\/$/, '').split('/').pop()?.match(/^(\d+)/)?.[1] ?? 0)
+}
+
+/** Todas las empresas de un patio, en su versión más reciente. */
+async function listadosDePatio(carpeta: string): Promise<ArchivoListado[]> {
+  const raiz = enlaces(await (await traer(carpeta)).text(), carpeta)
+  if (raiz.pdfs.length) return raiz.pdfs.map((u) => archivo(u, 'Listado final'))
+  const avances = [...raiz.carpetas].sort((a, b) => numeroAvance(b) - numeroAvance(a))
+  for (const c of avances) {
+    const pdfs = enlaces(await (await traer(c)).text(), c).pdfs
+    if (pdfs.length) {
+      const nombre = decodeURIComponent(c).replace(/\/$/, '').split('/').pop() ?? ''
+      return pdfs.map((u) => archivo(u, `${nombre} avance`))
+    }
+  }
+  return []
 }
 
 /**
- * A partir de lo que pegue el usuario (un PDF, la carpeta de un patio o la
- * de una fecha) regresa todos los listados que encuentre.
+ * A partir de lo que pegue el usuario (el PDF de una empresa, la carpeta de
+ * un patio o la de una fecha) regresa los listados de TODAS las empresas del
+ * patio (o de todos los patios de esa fecha). Pegar un solo PDF trae el
+ * patio completo: el usuario quiere el registro de todo lo que sale.
  */
 export async function buscarListados(entrada: string): Promise<ArchivoListado[]> {
   let url: URL
@@ -68,16 +95,14 @@ export async function buscarListados(entrada: string): Promise<ArchivoListado[]>
   if (url.hostname !== 'prosubastas.com.mx' || !url.pathname.startsWith('/subastas/')) {
     throw new Error('El enlace debe ser de prosubastas.com.mx/subastas/…')
   }
-  if (/\.pdf$/i.test(url.pathname)) return [archivo(url.toString())]
+  // /subastas/<fecha>/<patio>/[1er/][archivo.pdf] → nos quedamos con fecha y patio.
+  const partes = url.pathname.replace(/^\/subastas\//, '').split('/').filter(Boolean).filter((p) => !/\.pdf$/i.test(p))
+  if (!/^\d{4}_\d{2}_\d{2}$/.test(partes[0] ?? '')) throw new Error('El enlace debe incluir la carpeta de la fecha, p. ej. …/subastas/2026_10_09/')
+  const fechaCarpeta = `${BASE}${partes[0]}/`
+  if (partes[1]) return listadosDePatio(`${fechaCarpeta}${partes[1]}/`)
 
-  const carpeta = url.toString().endsWith('/') ? url.toString() : `${url.toString()}/`
-  const { fecha, patio } = datosDeUrl(carpeta)
-  if (!fecha) throw new Error('El enlace debe incluir la carpeta de la fecha, p. ej. …/subastas/2026_10_09/')
-  const raiz = enlaces(await (await traer(carpeta)).text(), carpeta)
-  if (patio) return raiz.pdfs.map(archivo)
-  // Carpeta de la fecha: entrar a cada patio (sin subcarpetas internas).
-  const porPatio = await Promise.all(raiz.carpetas.map(async (c) => enlaces(await (await traer(c)).text(), c).pdfs.map(archivo)))
-  return porPatio.flat()
+  const raiz = enlaces(await (await traer(fechaCarpeta)).text(), fechaCarpeta)
+  return (await Promise.all(raiz.carpetas.map(listadosDePatio))).flat()
 }
 
 /** "GDL" / "Guadalajara" → misma clave, para encontrar la subasta del patio. */
