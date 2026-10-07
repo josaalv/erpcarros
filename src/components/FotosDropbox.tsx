@@ -75,6 +75,7 @@ export function FotosDropboxModal({ enlace, torre, stock, titulo, pista, onClose
   const [carpeta, setCarpeta] = useState<CarpetaUnidad | null | undefined>(undefined)
   const [miniaturas, setMiniaturas] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+  const [errorFotos, setErrorFotos] = useState<string | null>(null)
   const [vista, setVista] = useState<Vista | null>(null)
   const archivo = useArchivos(enlace)
 
@@ -90,8 +91,10 @@ export function FotosDropboxModal({ enlace, torre, stock, titulo, pista, onClose
         // De 4 en 4 para no saturar la API de Dropbox.
         for (let i = 0; i < c.fotos.length && vivo; i += 4) {
           const lote = await Promise.all(c.fotos.slice(i, i + 4).map(async (f) => {
-            try { const u = URL.createObjectURL(await miniaturaDropbox(enlace, f.ruta)); urls.push(u); return [f.ruta, u] as const } catch { return null }
+            try { const u = URL.createObjectURL(await miniaturaDropbox(enlace, f.ruta)); urls.push(u); return [f.ruta, u] as const } catch (e) { if (vivo) setErrorFotos((e as Error).message); return null }
           }))
+          // Si el primer lote falló completo, Dropbox no las va a dar: no seguir pidiendo.
+          if (i === 0 && lote.every((x) => !x)) break
           if (vivo) setMiniaturas((m) => ({ ...m, ...Object.fromEntries(lote.filter((x): x is readonly [string, string] => Boolean(x))) }))
         }
       })
@@ -130,6 +133,13 @@ export function FotosDropboxModal({ enlace, torre, stock, titulo, pista, onClose
         </Alerta>
       ) : (
         <>
+          {errorFotos && Object.keys(miniaturas).length === 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <Alerta tipo="aviso">
+                {errorFotos}{' '}<a href={enlace} target="_blank" rel="noreferrer">Abrir la carpeta en Dropbox ↗</a>
+              </Alerta>
+            </div>
+          )}
           {!carpeta.coincideStock && (
             <div style={{ marginBottom: 12 }}>
               <Alerta tipo="aviso">

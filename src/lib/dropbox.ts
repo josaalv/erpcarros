@@ -98,8 +98,8 @@ const argAscii = (o: unknown) => JSON.stringify(o).replace(/[\u007f-￿]/g, (c) 
 function errorDropbox(ruta: string, status: number, cuerpo: string): string {
   let resumen = cuerpo.slice(0, 160)
   try { resumen = (JSON.parse(cuerpo) as { error_summary?: string }).error_summary ?? resumen } catch { /* no era JSON */ }
-  if (/shared_link_(access_denied|not_found)|access_denied/.test(resumen)) {
-    return 'Dropbox no dejó abrir el archivo con ese enlace. Copia de nuevo el enlace COMPLETO de la carpeta (debe incluir "rlkey=…") y guárdalo en la subasta.'
+  if (/access_denied|not_found|disallowed|download/i.test(resumen)) {
+    return `Dropbox no deja descargar archivos de esta carpeta compartida (${resumen.replace(/\/\.+$/, '')}). Suele pasar cuando quien la comparte desactivó las descargas: se puede ver en Dropbox, pero no desde otra aplicación.`
   }
   return `Dropbox (${ruta}): ${status} ${resumen}`
 }
@@ -143,8 +143,32 @@ export async function listarCarpeta(enlace: string, ruta = ''): Promise<EntradaD
   return salida
 }
 
+/**
+ * Forma oficial del enlace según Dropbox (get_shared_link_metadata). Algunos
+ * enlaces copiados ("…/h?rlkey=…") se pueden listar pero no descargar con la
+ * forma pegada; con la oficial sí. Se pide una vez por enlace.
+ */
+const canonicos = new Map<string, Promise<string>>()
+function enlaceOficial(enlace: string): Promise<string> {
+  if (!canonicos.has(enlace)) {
+    canonicos.set(enlace, rpc<{ url: string }>('sharing/get_shared_link_metadata', { url: enlace }).then((m) => m.url || enlace).catch(() => enlace))
+  }
+  return canonicos.get(enlace)!
+}
+
+/** Contenido de un archivo del enlace; si Dropbox lo niega (409) reintenta con la forma oficial del enlace. */
+async function contenidoDeEnlace(enlace: string, hacer: (url: string) => Promise<Blob>): Promise<Blob> {
+  try {
+    return await hacer(enlace)
+  } catch (e) {
+    const oficial = await enlaceOficial(enlace)
+    if (oficial === enlace) throw e
+    return hacer(oficial)
+  }
+}
+
 export async function miniaturaDropbox(enlace: string, ruta: string): Promise<Blob> {
-  return contenido('files/get_thumbnail_v2', { resource: { '.tag': 'link', url: enlace, path: ruta }, format: 'jpeg', size: 'w480h320', mode: 'fitone_bestfit' })
+  return contenidoDeEnlace(enlace, (url) => contenido('files/get_thumbnail_v2', { resource: { '.tag': 'link', url, path: ruta }, format: 'jpeg', size: 'w480h320', mode: 'fitone_bestfit' }))
 }
 
 const TIPOS: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', pdf: 'application/pdf' }
@@ -155,7 +179,7 @@ export function tipoPorNombre(nombre: string): string {
 }
 
 export async function descargarDropbox(enlace: string, ruta: string): Promise<Blob> {
-  const b = await contenido('sharing/get_shared_link_file', { url: enlace, path: ruta })
+  const b = await contenidoDeEnlace(enlace, (url) => contenido('sharing/get_shared_link_file', { url, path: ruta }))
   return new Blob([b], { type: tipoPorNombre(ruta) })
 }
 
