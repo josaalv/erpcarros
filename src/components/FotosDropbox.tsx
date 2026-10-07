@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { buscarCarpetaUnidad, conectarDropbox, descargarDropbox, dropboxConectado, miniaturaDropbox, type CarpetaUnidad, type EntradaDropbox } from '../lib/dropbox'
+import { buscarCarpetaUnidad, conectarDropbox, descargarDropbox, dropboxConectado, enlaceSinClave, miniaturaDropbox, type CarpetaUnidad, type EntradaDropbox, type PistaEmpresa } from '../lib/dropbox'
 import { cargarPdfjs } from '../lib/contratoPdf'
 import { miniatura } from '../lib/miniatura'
 import { useParametros } from '../lib/parametros'
@@ -62,11 +62,13 @@ type Vista = { tipo: 'foto'; indice: number } | { tipo: 'pdf'; archivo: EntradaD
  * Fotos, hoja de inspección y REPUVE de una unidad, leídos directo de la
  * carpeta compartida de Dropbox de la subasta (no se guardan: solo se ven).
  */
-export function FotosDropboxModal({ enlace, torre, stock, titulo, onClose }: {
+export function FotosDropboxModal({ enlace, torre, stock, titulo, pista, onClose }: {
   enlace: string
   torre: string
   stock: string | null
   titulo: string
+  /** Empresa del listado (código, número, vendedor) para hallar su carpeta aunque no se llame "01 FC". */
+  pista?: PistaEmpresa
   onClose: () => void
 }) {
   const conectado = dropboxConectado()
@@ -80,7 +82,7 @@ export function FotosDropboxModal({ enlace, torre, stock, titulo, onClose }: {
     if (!conectado) return
     let vivo = true
     const urls: string[] = []
-    buscarCarpetaUnidad(enlace, torre, stock)
+    buscarCarpetaUnidad(enlace, torre, stock, pista)
       .then(async (c) => {
         if (!vivo) return
         setCarpeta(c)
@@ -95,6 +97,7 @@ export function FotosDropboxModal({ enlace, torre, stock, titulo, onClose }: {
       })
       .catch((e) => { if (vivo) setError((e as Error).message) })
     return () => { vivo = false; urls.forEach((u) => URL.revokeObjectURL(u)) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conectado, enlace, torre, stock])
 
   const documentos = carpeta ? [
@@ -114,6 +117,11 @@ export function FotosDropboxModal({ enlace, torre, stock, titulo, onClose }: {
         </div>
       ) : error ? (
         <Alerta>{error}</Alerta>
+      ) : enlaceSinClave(enlace) ? (
+        <Alerta tipo="aviso">
+          El enlace de fotos guardado en la subasta está incompleto (le falta la parte "rlkey=…"): Dropbox deja ver la lista pero no las fotos.
+          Copia el enlace completo de la carpeta desde Dropbox y guárdalo de nuevo en la subasta.
+        </Alerta>
       ) : carpeta === undefined ? (
         <Cargando />
       ) : carpeta === null ? (

@@ -288,6 +288,7 @@ export default function PosiblesOfertas() {
           torre={viendoFotos.torre}
           stock={viendoFotos.stock}
           titulo={`${viendoFotos.marca} ${viendoFotos.modelo} ${viendoFotos.anio}`}
+          pista={{ codigo: viendoFotos.torre.split('-')[0], vendedor: viendoFotos.vendedor }}
           onClose={() => setViendoFotos(null)}
         />
       )}
@@ -526,7 +527,7 @@ function AdquirirModal({ enlaceFotos, evaluacion, estados, ubicaciones, onClose,
     // solo se avisa (las fotos se pueden subir después desde el Expediente).
     if (copiar && enlaceFotos && evaluacion.torre) {
       try {
-        const resumen = await copiarDeDropbox({ enlace: enlaceFotos, torre: evaluacion.torre, stock: evaluacion.stock, vehiculoId: vehiculo.id, onAvance: setAvance })
+        const resumen = await copiarDeDropbox({ enlace: enlaceFotos, torre: evaluacion.torre, stock: evaluacion.stock, vendedor: evaluacion.vendedor, vehiculoId: vehiculo.id, onAvance: setAvance })
         window.alert(resumen)
       } catch (err) {
         window.alert(`La unidad se adquirió, pero falló la copia desde Dropbox: ${(err as Error).message}`)

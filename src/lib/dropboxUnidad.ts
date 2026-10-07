@@ -11,10 +11,10 @@ import { buscarCarpetaUnidad, descargarDropbox, reducirFoto } from './dropbox'
  * deshace — se puede reintentar desde el Expediente.
  */
 export async function copiarDeDropbox(opciones: {
-  enlace: string; torre: string; stock: string | null; vehiculoId: number; maxFotos?: number; onAvance?: (texto: string) => void
+  enlace: string; torre: string; stock: string | null; vendedor?: string | null; vehiculoId: number; maxFotos?: number; onAvance?: (texto: string) => void
 }): Promise<string> {
-  const { enlace, torre, stock, vehiculoId, maxFotos = 8, onAvance } = opciones
-  const c = await buscarCarpetaUnidad(enlace, torre, stock)
+  const { enlace, torre, stock, vendedor, vehiculoId, maxFotos = 8, onAvance } = opciones
+  const c = await buscarCarpetaUnidad(enlace, torre, stock, { codigo: torre.split('-')[0], vendedor })
   if (!c) return `No se encontró la carpeta de la torre ${torre} en Dropbox.`
   if (!c.coincideStock) return `La carpeta de la torre ${torre} en Dropbox no corresponde al stock ${stock}; no se copió nada.`
 
