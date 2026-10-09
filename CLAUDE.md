@@ -369,6 +369,30 @@ documento continuo (unidades partidas entre páginas), el vendedor aunque no
 diga S.A., versiones con "AÑO … KM …" pegado y facturas "FACTURADO EL: …
 IMPORTE DE: $…".
 
+**Diseño en curso (octubre 2026): resultados de la subasta y alta de ganadas**
+— decidido con el usuario, todavía SIN construir:
+- La subasta corre en una reunión de **Zoom (app de escritorio, no navegador:
+  descartada una extensión de Chrome)**. El subastador escribe en el chat,
+  con precios en **millares**. El usuario deja Zoom corriendo y solo atiende
+  sus marcas, así que la captura a mano está descartada: el sistema debe
+  **leer el chat completo** (pegado con Ctrl+A/C, o el .txt que Zoom guarda)
+  y llenar el resultado de cada unidad del catálogo por torre.
+  Falta un ejemplo real del chat para escribir el lector.
+- Vocabulario: **base** = precio de arranque que pone la subasta y precio
+  sugerido de venta directa; **venta** = venta directa; **reserva** = la
+  marca no vende directo y negocia con quien quedó en reserva; **pass** = a
+  la marca no le interesó la oferta y siguió adelante.
+- **Contratos**: un PDF por empresa/marca, con todas las unidades ganadas de
+  esa marca en ese patio (hoy solo GDL). Paso "Cargar contratos" en la
+  subasta: varios PDF a la vez, cruza con catálogo/evaluación por stock o
+  serie, alta masiva (vehículo + compra + contrato) y las evaluaciones no
+  ganadas quedan como perdidas. Reemplaza capturar el precio a mano en
+  "Adquirir".
+- Capital de socios: se acumula central y se reparte después (se diseña
+  luego). Pago a Prosubastas: no se registra (al entrar a inventario ya se
+  considera pagado vehículo + comisión). Datos históricos: no se cargan
+  hasta terminar el diseño.
+
 **Pruebas de permisos**: `supabase/tests/rls_por_rol.sql` corre en una
 transacción con rollback y revisa gerencia, comisionista, demo, anónimo y
 admin (control). Correrlo (MCP `execute_sql` o SQL Editor) después de
