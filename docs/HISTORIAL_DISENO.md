@@ -779,3 +779,5 @@ nunca el vehículo real.
   negocio (ver nota de arriba): esos nunca van al repo público.
 - Cambios de código van por PR (confirmar con el usuario antes de push
   directo a `main`).
+
+**Extensión de Chrome para el chat de Zoom** (`herramientas/extension-chat-zoom/`, octubre 2026): la app de escritorio de Zoom bloquea copiar/guardar y no expone el chat por accesibilidad (probado con UI Automation: nada). El usuario entra por Zoom web en Chrome; la extensión lee el panel de chat cada segundo, une lecturas por traslape (sin duplicar) y guarda en chrome.storage; el popup descarga el .txt. Primera versión: el panel se detecta por clases/atributos con "chat" (falta confirmar contra el DOM real). Formato visto: subastador anuncia `CO02 $710,000` (torre sin guion), pujas de participantes en millares (`49`, `50`) con su paleta (`29 PS1128`), resultados `RESERVA CO01 $50,000 COMPRADOR/A 29` y `PASS CO02`.
