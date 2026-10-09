@@ -6,17 +6,38 @@
 const CLAVE = 'chatSubasta'
 let anterior = []
 
-/** El contenedor del chat: el elemento "chat" con más texto que no sea toda la página. */
+const HORA = /^\d{1,2}:\d{2}\s?(AM|PM|a\.?\s?m\.?|p\.?\s?m\.?)?$/i
+
+/** Textos fijos de Zoom que no son mensajes (encabezado, pie, avisos). */
+const RUIDO = [
+  /^chat$/i, /^you're chatting as a guest/i, /^messages (sent|addressed) /i, /^guests like you/i,
+  /^all others can see/i, /^got it$/i, /new messages?$/i, /^who can see your messages/i, /^to:$/i,
+  /^meeting group chat$/i, /^recording on$/i, /^(enviar|send) (mensaje|message)/i, /^type message/i,
+]
+const esRuido = (s) => RUIDO.some((r) => r.test(s))
+
+/** Ancestro común más cercano de varios elementos. */
+function ancestroComun(els) {
+  let a = els[0]
+  for (const el of els.slice(1)) { while (a && !a.contains(el)) a = a.parentElement }
+  return a
+}
+
+/**
+ * La lista de mensajes: el ancestro común de los textos con hora ("02:37 PM").
+ * Así no se toma el encabezado ni el pie del panel, que cambian y rompen la
+ * comparación con la lectura anterior.
+ */
 function panelChat() {
-  const candidatos = [...document.querySelectorAll('[class*="chat" i], [aria-label*="chat" i], [id*="chat" i]')]
-    .filter((el) => el.innerText && el.innerText.length > 0 && el !== document.body)
-  // Preferir el que contiene mensajes (más renglones), pero no la caja de escribir.
-  candidatos.sort((a, b) => b.innerText.length - a.innerText.length)
-  return candidatos.find((el) => !el.matches('textarea, input, [contenteditable="true"]')) ?? null
+  const horas = [...document.querySelectorAll('span, div, time, p')]
+    .filter((el) => el.childElementCount === 0 && HORA.test((el.textContent ?? '').trim()))
+  if (horas.length >= 2) return ancestroComun(horas)
+  if (horas.length === 1) return horas[0].closest('[role="list"], [role="log"], ul') ?? horas[0].parentElement?.parentElement?.parentElement ?? null
+  return null
 }
 
 function renglones(el) {
-  return el.innerText.split('\n').map((s) => s.trim()).filter(Boolean)
+  return el.innerText.split('\n').map((s) => s.trim()).filter((s) => s && !esRuido(s))
 }
 
 /** Parte de `nuevo` que no estaba al final de `previo`. */
