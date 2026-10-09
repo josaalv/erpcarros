@@ -3,7 +3,11 @@
 // así los mensajes que se repiten entre lecturas no se duplican).
 // No escribe nada en Zoom: solo lee el texto que ya se ve en pantalla.
 
+// Todo dentro de una función: se puede inyectar más de una vez en la misma
+// página sin chocar con los nombres de la copia anterior.
+;(() => {
 const CLAVE = 'chatSubasta'
+const LATIDO = 'chatSubastaEstado'
 let anterior = []
 
 
@@ -75,8 +79,12 @@ function soloLoNuevo(previo, nuevo) {
 
 async function leer() {
   const el = panelChat()
+  const ahora = el ? renglones(el) : []
+  // Estado para el popup (solo el marco que sí ve el chat lo reporta).
+  if (el || !(await chrome.storage.local.get(LATIDO))[LATIDO]?.panel) {
+    await chrome.storage.local.set({ [LATIDO]: { hora: Date.now(), panel: Boolean(el), visibles: ahora.length, url: location.host } })
+  }
   if (!el) return
-  const ahora = renglones(el)
   const nuevos = soloLoNuevo(anterior, ahora)
   anterior = ahora
   if (!nuevos.length) return
@@ -86,4 +94,12 @@ async function leer() {
   await chrome.storage.local.set({ [CLAVE]: datos })
 }
 
-setInterval(() => { leer().catch(() => {}) }, 1000)
+// Una sola copia por página: si se inyecta de nuevo (actualización o botón
+// "Activar"), la nueva detiene a la anterior. Si la extensión se recarga, la
+// copia vieja pierde la conexión y se detiene sola.
+if (window.__chatSubastaIntervalo) clearInterval(window.__chatSubastaIntervalo)
+window.__chatSubastaIntervalo = setInterval(() => {
+  if (!chrome.runtime?.id) { clearInterval(window.__chatSubastaIntervalo); return }
+  leer().catch(() => {})
+}, 1000)
+})()
