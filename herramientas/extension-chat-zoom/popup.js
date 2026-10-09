@@ -5,7 +5,18 @@ async function pintar() {
   const lineas = datos?.lineas ?? []
   document.getElementById('cuenta').textContent = lineas.length
   document.getElementById('ultimos').textContent = lineas.slice(-8).join('\n') || '—'
+  const e = (await chrome.storage.local.get('chatSubastaEstado')).chatSubastaEstado
+  const vivo = e && Date.now() - e.hora < 5000
+  document.getElementById('estado').textContent = !vivo
+    ? '⚠️ No está leyendo esta reunión. Presiona "Activar en esta pestaña".'
+    : e.panel ? `✅ Leyendo el chat (${e.visibles} renglones en pantalla).` : '⚠️ Activa, pero no encuentra el chat: abre el panel de Chat de Zoom.'
 }
+
+document.getElementById('activar').addEventListener('click', async () => {
+  document.getElementById('estado').textContent = 'Activando…'
+  await chrome.runtime.sendMessage('inyectar')
+  setTimeout(pintar, 2000)
+})
 
 document.getElementById('descargar').addEventListener('click', async () => {
   const datos = (await chrome.storage.local.get(CLAVE))[CLAVE]
