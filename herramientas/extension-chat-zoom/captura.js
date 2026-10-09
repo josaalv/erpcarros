@@ -6,13 +6,12 @@
 const CLAVE = 'chatSubasta'
 let anterior = []
 
-const HORA = /^\d{1,2}:\d{2}\s?(AM|PM|a\.?\s?m\.?|p\.?\s?m\.?)?$/i
 
 /** Textos fijos de Zoom que no son mensajes (encabezado, pie, avisos). */
 const RUIDO = [
-  /^chat$/i, /^you're chatting as a guest/i, /^messages (sent|addressed) /i, /^guests like you/i,
-  /^all others can see/i, /^got it$/i, /new messages?$/i, /^who can see your messages/i, /^to:$/i,
-  /^meeting group chat$/i, /^recording on$/i, /^(enviar|send) (mensaje|message)/i, /^type message/i,
+  /^chat$/i, /chatting as a guest/i, /^messages (sent|addressed) /i, /^guests like you/i,
+  /^all others can see/i, /^got it$/i, /new messages?$/i, /who can see your messages/i, /^to:/i,
+  /meeting group chat$/i, /^recording on$/i, /^(enviar|send) (mensaje|message)/i, /^type message/i,
 ]
 const esRuido = (s) => RUIDO.some((r) => r.test(s))
 
@@ -23,17 +22,35 @@ function ancestroComun(els) {
   return a
 }
 
+const HORA_EN_TEXTO = /\b\d{1,2}:\d{2}\s?(AM|PM|a\.?\s?m\.?|p\.?\s?m\.?)\b/i
+const PANEL = '[class*="chat" i], [aria-label*="chat" i], [id*="chat" i]'
+
+/** Método de la 0.1: el elemento "chat" con más texto (sin la caja de escribir). */
+function panelPorClase() {
+  const candidatos = [...document.querySelectorAll(PANEL)]
+    .filter((el) => el.innerText && el !== document.body && !el.matches('textarea, input, [contenteditable="true"]'))
+  candidatos.sort((x, y) => y.innerText.length - x.innerText.length)
+  return candidatos[0] ?? null
+}
+
 /**
- * La lista de mensajes: el ancestro común de los textos con hora ("02:37 PM").
- * Así no se toma el encabezado ni el pie del panel, que cambian y rompen la
- * comparación con la lectura anterior.
+ * La lista de mensajes: el ancestro común de los textos que traen hora
+ * ("01. PS1063 02:42 PM": en Zoom web la hora va pegada al nombre). Solo se
+ * cuentan horas dentro del panel de chat, para no subir hasta toda la página.
+ * Si no hay horas visibles, se usa el panel completo (el ruido se filtra).
  */
 function panelChat() {
-  const horas = [...document.querySelectorAll('span, div, time, p')]
-    .filter((el) => el.childElementCount === 0 && HORA.test((el.textContent ?? '').trim()))
-  if (horas.length >= 2) return ancestroComun(horas)
-  if (horas.length === 1) return horas[0].closest('[role="list"], [role="log"], ul') ?? horas[0].parentElement?.parentElement?.parentElement ?? null
-  return null
+  const panel = panelPorClase()
+  if (!panel) return null
+  const textos = []
+  const w = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT)
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (HORA_EN_TEXTO.test(n.textContent ?? '') && n.parentElement) textos.push(n.parentElement)
+  }
+  if (textos.length >= 2) return ancestroComun(textos) ?? panel
+  // Con un solo mensaje visible todavía no se sabe dónde está la lista: esperar.
+  if (textos.length === 1) return null
+  return panel
 }
 
 function renglones(el) {
