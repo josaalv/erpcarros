@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "ERP Vehículos – Chat de subasta",
+  "version": "0.1.0",
+  "description": "Guarda el chat de la subasta en Zoom (versión web) mientras corre, para importarlo al ERP.",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["https://*.zoom.us/*"],
+      "js": ["captura.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Chat de subasta" }
+}

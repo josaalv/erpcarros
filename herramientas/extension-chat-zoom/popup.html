@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px system-ui, sans-serif; width: 320px; margin: 0; padding: 14px; color: #0f172a; }
+  h1 { font-size: 15px; margin: 0 0 6px; }
+  p { margin: 6px 0; color: #475569; }
+  .cuenta { font-size: 22px; font-weight: 700; color: #0f766e; }
+  pre { background: #f1f5f9; border-radius: 6px; padding: 8px; max-height: 140px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+  button { width: 100%; margin-top: 6px; padding: 8px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-weight: 600; cursor: pointer; }
+  button.primario { background: #0f766e; color: #fff; border-color: #0f766e; }
+</style>
+</head>
+<body>
+  <h1>Chat de subasta</h1>
+  <p>Deja abierto el panel de <b>Chat</b> de Zoom (versión web) y esta pestaña. Se guarda solo.</p>
+  <p><span class="cuenta" id="cuenta">0</span> renglones guardados</p>
+  <pre id="ultimos">—</pre>
+  <button class="primario" id="descargar">Descargar chat (.txt)</button>
+  <button id="borrar">Borrar y empezar otra subasta</button>
+  <script src="popup.js"></script>
+</body>
+</html>
