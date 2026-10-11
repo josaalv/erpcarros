@@ -115,6 +115,39 @@ export interface Aportacion {
   fecha: string
 }
 
+/** Modalidad de propiedad de una unidad (migración 026). */
+export type ModalidadPropiedad = 'unica' | 'copropiedad' | 'excepcion'
+
+/** Quién pagó un gasto: uno o varios socios con su % y de qué dinero. */
+export interface GastoPago {
+  id: number
+  gasto_id: number
+  socio_id: number
+  /** Fracción 0–1. */
+  porcentaje: number
+  /** fondo: de su parte del fondo común · bolsa: dinero propio (aporte nuevo). */
+  origen: 'fondo' | 'bolsa'
+}
+
+/** Reparto acordado de una unidad en excepción: % del total de la venta. */
+export interface VehiculoReparto {
+  id: number
+  vehiculo_id: number
+  socio_id: number
+  porcentaje: number
+}
+
+/** v_capital_socio_vehiculo: capital de cada socio en una unidad. */
+export interface CapitalSocioVehiculo {
+  vehiculo_id: number
+  socio_id: number
+  aportado_compra: number
+  aportado_gastos: number
+  capital: number
+  participacion_capital: number | null
+  participacion_acordada: number | null
+}
+
 export interface ParticipacionSocio {
   vehiculo_id: number
   socio_id: number
