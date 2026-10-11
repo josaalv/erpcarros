@@ -814,3 +814,13 @@ Decidido con el usuario (respuestas a preguntas de diseño):
 - El Excel de ejemplo (`Informacion_cuentas.xlsx`, NO en el repo) tiene una
   hoja por vehículo; las columnas de "Total gasto" son periodos de registro,
   todos pagados por el dueño.
+Respuestas finales (octubre 2026):
+- Retiro: un socio retira como máximo su proporción del fondo líquido (no
+  todo el fondo, no se reparte a todos a la vez).
+- Préstamo entre socios: el admin elige quién prestó.
+- Excepción de propiedad: el reparto es un % del TOTAL de la venta (no de la
+  utilidad). Ej.: compra 212, A pone 100 y B 112, acuerdan 50% de la venta
+  para A; se vende en 250 → A 125, B 125.
+- Saldos iniciales: se cargan por socio con fecha de corte, sin historial.
+- Una venta se cierra hasta recibir el pago total; antes es "venta abierta"
+  (hoy el sistema deja cerrar con saldo por cobrar: hay que cambiarlo).
