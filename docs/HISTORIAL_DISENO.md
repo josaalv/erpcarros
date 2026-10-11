@@ -824,3 +824,15 @@ Respuestas finales (octubre 2026):
 - Saldos iniciales: se cargan por socio con fecha de corte, sin historial.
 - Una venta se cierra hasta recibir el pago total; antes es "venta abierta"
   (hoy el sistema deja cerrar con saldo por cobrar: hay que cambiarlo).
+- Ejemplos de punta a punta validados por el usuario (propiedad única con
+  préstamo, copropiedad 58.3/41.7, excepción 50% de la venta).
+- Origen del dinero de un gasto: puede ser de la parte del socio en el fondo
+  (se descuenta; si no alcanza → préstamo de otro socio o aporte nuevo) o de
+  su bolsa (aporte nuevo). En ambos casos suma a su capital en el vehículo.
+  Por eso se lleva el capital de cada socio en el fondo.
+- Excepción: el % acordado se aplica al total de la venta al final; los
+  gastos no se reembolsan aparte.
+- Plan de construcción por partes (cada una en su PR): 1) quién pagó cada
+  gasto + modalidad del vehículo; 2) fondo común y cuentas por socio
+  (aportes, retiros, préstamos, saldos iniciales); 3) cierre solo con pago
+  completo + liquidación por modalidad abonada a cada cuenta.
