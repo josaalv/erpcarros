@@ -781,3 +781,36 @@ nunca el vehículo real.
   directo a `main`).
 
 **Extensión de Chrome para el chat de Zoom** (`herramientas/extension-chat-zoom/`, octubre 2026): la app de escritorio de Zoom bloquea copiar/guardar y no expone el chat por accesibilidad (probado con UI Automation: nada). El usuario entra por Zoom web en Chrome; la extensión lee el panel de chat cada segundo, une lecturas por traslape (sin duplicar) y guarda en chrome.storage; el popup descarga el .txt. Primera versión: el panel se detecta por clases/atributos con "chat" (falta confirmar contra el DOM real). Formato visto: subastador anuncia `CO02 $710,000` (torre sin guion), pujas de participantes en millares (`49`, `50`) con su paleta (`29 PS1128`), resultados `RESERVA CO01 $50,000 COMPRADOR/A 29` y `PASS CO02`.
+
+## Diseño en curso: propiedad, socios y fondo común (octubre 2026, sin construir)
+Decidido con el usuario (respuestas a preguntas de diseño):
+- Factura siempre a nombre de Roberto Salinas (socio accionista en la subasta);
+  "dueño" en el sistema = quien puso el dinero. Hoy los socios son un grupo
+  fijo; debe poder agregarse un inversionista ocasional.
+- Modalidades por vehículo: **propiedad única** (un dueño cubre todo),
+  **copropiedad** (% = capital resultante de cada uno al final: compra +
+  todos los gastos que pagó / total) y **excepción de propiedad** (reparto
+  fijado a mano: % o monto fijo; registrar quién pagó gastos es opcional).
+- Cada gasto registra quién lo pagó: uno o varios con %, con fecha (los
+  gastos se dan de alta en días distintos; todo con fecha). Todo gasto se
+  registra aunque no sea "inversión". El IVA de la comisión es un gasto
+  opcional que solo aparece cuando hay que absorberlo (márgenes antes de
+  impuestos). Gastos generales sin vehículo: no participan.
+- Reparto al cerrar la venta: a cada uno se le devuelve su capital y la
+  utilidad (o pérdida) va por % en copropiedad / 100% al dueño único. Gastos
+  después de vender: se registran en el mismo vehículo y se recalcula.
+- **Fondo común** (solo para comprar en subastas): de los socios en proporción
+  a lo que aportó cada uno; lo recuperado se queda reinvertido salvo retiro.
+  Retiros: del fondo líquido, en proporción al % de pertenencia.
+- Si un socio usa del fondo más de lo que le toca, la diferencia es un
+  **préstamo sin interés** de otro socio que sí cumplió; se paga al vender ese
+  vehículo; el prestamista NO participa de la utilidad (no es copropiedad).
+- Ingresos externos (p. ej. un crédito) solo indican de dónde vino el
+  aporte de un socio; no generan gastos.
+- Estado de cuenta por socio con fechas (control individual). Por ahora solo
+  lo usa el admin.
+- Toma a cuenta (no ha pasado): única → el dueño del vendido es dueño del
+  recibido; copropiedad → por definir (propuesta en la conversación).
+- El Excel de ejemplo (`Informacion_cuentas.xlsx`, NO en el repo) tiene una
+  hoja por vehículo; las columnas de "Total gasto" son periodos de registro,
+  todos pagados por el dueño.
