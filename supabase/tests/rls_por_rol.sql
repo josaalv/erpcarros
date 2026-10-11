@@ -30,6 +30,12 @@ insert into venta (vehiculo_id, canal, precio_acordado, forma_pago, fecha_venta)
   select id, 'directa', 130000, 'financiera', current_date from vehiculo where id_interno = 'PRUEBA-RLS';
 insert into cobro (venta_id, vehiculo_id, monto, origen)
   select ve.id, ve.vehiculo_id, 30000, 'cliente' from venta ve join vehiculo v on v.id = ve.vehiculo_id where v.id_interno = 'PRUEBA-RLS';
+-- Quién pagó (026): un gasto con pagador y reparto de excepción.
+insert into gasto_pago (gasto_id, socio_id, porcentaje)
+  select g.id, s.id, 1 from gasto g join vehiculo v on v.id = g.vehiculo_id, socio s
+  where v.id_interno = 'PRUEBA-RLS' and s.nombre = 'Socio prueba RLS' limit 1;
+insert into vehiculo_reparto (vehiculo_id, socio_id, porcentaje)
+  select v.id, s.id, 1 from vehiculo v, socio s where v.id_interno = 'PRUEBA-RLS' and s.nombre = 'Socio prueba RLS';
 update compra set precio = 81000 where vehiculo_id = (select id from vehiculo where id_interno = 'PRUEBA-RLS');  -- deja una fila en bitacora
 
 create temporary table prueba_resultado (rol text, falla text);
@@ -50,6 +56,9 @@ declare r text := 'gerencia';
 begin
   if not exists (select 1 from v_vehiculo_ficha where id_interno = 'PRUEBA-RLS') then
     insert into prueba_resultado values (r, 'no ve la unidad en v_vehiculo_ficha (debería verla)');
+  end if;
+  if exists (select 1 from gasto_pago) or exists (select 1 from vehiculo_reparto) or exists (select 1 from v_capital_socio_vehiculo) then
+    insert into prueba_resultado values (r, 've quién pagó / reparto / capital de socios');
   end if;
   if exists (select 1 from v_vehiculo_ficha where precio_minimo is not null or costo_total is not null or utilidad is not null or margen is not null) then
     insert into prueba_resultado values (r, 've precio mínimo / costo / utilidad en v_vehiculo_ficha');
@@ -185,6 +194,10 @@ begin
   end;
   if not exists (select 1 from bitacora where tabla = 'compra') then
     insert into prueba_resultado values (r, 'no ve la bitácora (control)');
+  end if;
+  if not exists (select 1 from v_capital_socio_vehiculo c join vehiculo v on v.id = c.vehiculo_id
+                 where v.id_interno = 'PRUEBA-RLS' and c.capital = 86000 and c.participacion_acordada = 1) then
+    insert into prueba_resultado values (r, 'no ve el capital del socio (85,000 compra + 1,000 gasto) ni el reparto (control)');
   end if;
 end $$;
 reset role;

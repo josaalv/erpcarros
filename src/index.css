@@ -310,3 +310,11 @@ details.plegable summary { cursor: pointer; color: var(--text-soft); font-weight
 @media (max-width: 640px) { .visor-flecha { width: 40px; height: 52px; font-size: 32px; } .visor-flecha.izq { left: 4px; } .visor-flecha.der { right: 4px; } }
 .visor-embebido { width: 100%; height: 65vh; min-height: 420px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .visor-embebido iframe { width: 100% !important; height: 100% !important; border: 0; }
+
+/* Quién pagó un gasto / reparto acordado (Propiedad.tsx) */
+.pagadores { display: flex; flex-direction: column; gap: 8px; }
+.pagador-fila { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pagador-fila > .select { flex: 1 1 130px; min-width: 0; }
+.pagador-pct { display: flex; align-items: center; gap: 4px; width: 110px; }
+.pagador-pct .input { text-align: right; }
+.pagador-pie { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }

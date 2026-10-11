@@ -836,3 +836,22 @@ Respuestas finales (octubre 2026):
   gasto + modalidad del vehículo; 2) fondo común y cuentas por socio
   (aportes, retiros, préstamos, saldos iniciales); 3) cierre solo con pago
   completo + liquidación por modalidad abonada a cada cuenta.
+
+**Parte 1 construida (`026_propiedad_y_pagadores.sql`)**: `vehiculo.modalidad_propiedad`
+('unica' | 'copropiedad' | 'excepcion', default 'unica') y `vehiculo.propietario_id`
+(con grant de columna); `gasto_pago` (gasto, socio, porcentaje 0–1, origen
+'fondo'|'bolsa'; unique gasto+socio) y `vehiculo_reparto` (% de la venta
+para excepción), ambas solo admin, con trigger `validar_suma_porcentajes`
+(no más de 100%); vistas `v_capital_socio_vehiculo` (aportado_compra =
+`aportacion`, aportado_gastos = gasto × %, capital, participacion_capital,
+participacion_acordada) y `v_gasto_sin_pagador`. Verificado en base: el
+ejemplo de copropiedad da 58.33/41.67 y un reparto de 120% se rechaza; RLS
+OK (gerencia no ve nada de esto). UI: "¿Quién pagó?" en `GastoModal`
+(propietario al 100% por default en propiedad única; "+ Dividir con otro
+socio"), columna "Pagó" en Gastos, y en la pestaña Socios del Expediente
+`PropiedadUnidad` (modalidad, dueño, reparto de excepción, capital por
+socio, aviso de gastos sin pagador) arriba de "Aportaciones a la compra"
+(antes "Capital de socios", ya sin el % que contradecía el nuevo cálculo).
+`useBorrador` ahora completa con el valor inicial los campos que falten en
+un borrador viejo. `cerrar_financiero` sigue usando `v_participacion_socio`
+(solo compra) hasta la parte 3.

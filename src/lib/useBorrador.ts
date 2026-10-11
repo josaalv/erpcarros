@@ -15,7 +15,12 @@ export function useBorrador<T>(clave: string, inicial: T): [T, Dispatch<SetState
   const [valor, setValor] = useState<T>(() => {
     try {
       const guardado = window.localStorage.getItem(clave)
-      return guardado ? (JSON.parse(guardado) as T) : inicial
+      if (!guardado) return inicial
+      const leido = JSON.parse(guardado) as T
+      // Borradores viejos no traen los campos que se agregaron después al
+      // formulario: se completan con el valor inicial.
+      const esObjeto = (x: unknown) => typeof x === 'object' && x !== null && !Array.isArray(x)
+      return esObjeto(inicial) && esObjeto(leido) ? { ...inicial, ...leido } : leido
     } catch {
       return inicial
     }

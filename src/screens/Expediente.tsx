@@ -12,8 +12,10 @@ import { BUCKET_DOCUMENTOS, abrirArchivo, quitarArchivos, subirArchivo } from '.
 import { miniatura } from '../lib/miniatura'
 import { Bitacora } from '../components/Bitacora'
 import { FotosUnidad } from '../components/FotosUnidad'
+import { PagadoresEditor, PropiedadUnidad, ResumenPagadores } from '../components/Propiedad'
+import { filasIniciales, guardarPagos, validarPagos, type FilaPago, type PropiedadVehiculo } from '../lib/propiedad'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, Dato, EtiquetaBadge, Seccion, Badge } from '../components/Ui'
-import type { VehiculoFicha, Gasto, Proveedor, TipoDocumento, Documento, Aportacion, Socio, CategoriaGasto } from '../types'
+import type { VehiculoFicha, Gasto, GastoPago, Proveedor, TipoDocumento, Documento, Aportacion, Socio, CategoriaGasto } from '../types'
 
 interface Compra { id: number; vehiculo_id: number; precio: number; comision: number; impuestos: number; iva: number }
 
@@ -32,6 +34,8 @@ export default function Expediente() {
   const [documentos, setDocumentos] = useState<Documento[]>([])
   const [aportaciones, setAportaciones] = useState<Aportacion[]>([])
   const [socios, setSocios] = useState<Socio[]>([])
+  const [pagos, setPagos] = useState<GastoPago[]>([])
+  const [propiedad, setPropiedad] = useState<PropiedadVehiculo | null>(null)
   const [cargando, setCargando] = useState(true)
   const [subasta, setSubasta] = useState<{ plataforma: string; fecha: string; lote: string | null } | null>(null)
   const [editandoDatos, setEditandoDatos] = useState(false)
@@ -41,7 +45,7 @@ export default function Expediente() {
 
   async function recargar() {
     if (!supabase || !id) return
-    const [vehRes, compraRes, gastosRes, tiposRes, docsRes, aportRes, sociosRes] = await Promise.all([
+    const [vehRes, compraRes, gastosRes, tiposRes, docsRes, aportRes, sociosRes, pagosRes, propRes] = await Promise.all([
       supabase.from('v_vehiculo_ficha').select('*').eq('id', id).maybeSingle(),
       supabase.from('compra').select('*').eq('vehiculo_id', id).maybeSingle(),
       supabase.from('gasto').select('*').eq('vehiculo_id', id).order('fecha', { ascending: false }),
@@ -49,6 +53,9 @@ export default function Expediente() {
       supabase.from('documento').select('*').eq('vehiculo_id', id),
       supabase.from('aportacion').select('*').eq('vehiculo_id', id).order('fecha'),
       supabase.from('socio').select('*').order('nombre'),
+      // Quién pagó cada gasto de esta unidad (solo admin; los demás reciben vacío por RLS).
+      supabase.from('gasto_pago').select('*, gasto!inner(vehiculo_id)').eq('gasto.vehiculo_id', id),
+      supabase.from('vehiculo').select('modalidad_propiedad, propietario_id').eq('id', id).maybeSingle(),
     ])
     const ficha = vehRes.data as VehiculoFicha | null
     setVeh(ficha)
@@ -62,6 +69,8 @@ export default function Expediente() {
     setDocumentos((docsRes.data ?? []) as Documento[])
     setAportaciones((aportRes.data ?? []) as Aportacion[])
     setSocios((sociosRes.data ?? []) as Socio[])
+    setPagos((pagosRes.data ?? []) as GastoPago[])
+    setPropiedad(propRes.data as PropiedadVehiculo | null)
     setCargando(false)
   }
 
@@ -185,7 +194,7 @@ export default function Expediente() {
         <>
           <ComparativoEvaluacion vehiculoId={veh.id} compra={compra} gastos={gastos} precioAutorizado={veh.precio_autorizado} />
           <CompraForm key={`compra-${veh.id}`} vehiculoId={veh.id} compra={compra} onGuardado={recargar} />
-          <Gastos vehiculoId={veh.id} gastos={gastos} categorias={categorias} onCambio={recargar} />
+          <Gastos vehiculoId={veh.id} gastos={gastos} categorias={categorias} pagos={pagos} socios={socios} propiedad={propiedad} onCambio={recargar} />
         </>
       )}
 
@@ -209,7 +218,10 @@ export default function Expediente() {
       {pestana === 'historial' && esAdmin && <Bitacora vehiculoId={veh.id} />}
 
       {pestana === 'socios' && esAdmin && (
-        <CapitalSocios vehiculoId={veh.id} aportaciones={aportaciones} socios={socios} onCambio={recargar} />
+        <>
+          <PropiedadUnidad key={aportaciones.length + ':' + pagos.length} vehiculoId={veh.id} socios={socios} onCambio={recargar} />
+          <CapitalSocios vehiculoId={veh.id} aportaciones={aportaciones} socios={socios} onCambio={recargar} />
+        </>
       )}
     </div>
   )
@@ -393,6 +405,13 @@ function EliminarUnidad({ veh, documentos, gastos, onEliminada }: { veh: Vehicul
     // Los cobros no cascadean con la venta (FK sin acción): se quitan antes.
     const { error: errCobros } = await supabase.from('cobro').delete().eq('vehiculo_id', veh.id)
     if (errCobros) { setEliminando(false); setError(errCobros.message); return }
+    // Pagadores de gastos y reparto acordado (026) tampoco cascadean.
+    if (gastos.length) {
+      const { error: errPagos } = await supabase.from('gasto_pago').delete().in('gasto_id', gastos.map((g) => g.id))
+      if (errPagos) { setEliminando(false); setError(errPagos.message); return }
+    }
+    const { error: errReparto } = await supabase.from('vehiculo_reparto').delete().eq('vehiculo_id', veh.id)
+    if (errReparto) { setEliminando(false); setError(errReparto.message); return }
     const { data: conFotos } = await supabase.from('vehiculo').select('fotos').eq('id', veh.id).maybeSingle()
     await quitarArchivos([
       ...documentos.map((d) => d.archivo_path), ...gastos.map((g) => g.comprobante_path),
@@ -557,10 +576,13 @@ function ComparativoEvaluacion({ vehiculoId, compra, gastos, precioAutorizado }:
   )
 }
 
-function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
+function Gastos({ vehiculoId, gastos, categorias, pagos, socios, propiedad, onCambio }: {
   vehiculoId: number
   gastos: Gasto[]
   categorias: CategoriaGasto[]
+  pagos: GastoPago[]
+  socios: Socio[]
+  propiedad: PropiedadVehiculo | null
   onCambio: () => void
 }) {
   const [abrirNuevo, setAbrirNuevo] = useState(false)
@@ -582,6 +604,8 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
   async function eliminar(g: Gasto) {
     if (!supabase || !window.confirm(`¿Eliminar el gasto "${g.descripcion}" por ${mxn(g.importe)}?`)) return
     setError(null)
+    const { error: errPagos } = await supabase.from('gasto_pago').delete().eq('gasto_id', g.id)
+    if (errPagos) { setError(errPagos.message); return }
     const { error } = await supabase.from('gasto').delete().eq('id', g.id)
     if (error) { setError(error.message); return }
     await quitarArchivos([g.comprobante_path])
@@ -612,7 +636,7 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
       <div className="tabla-wrap">
         <table className="tabla">
           <thead>
-            <tr><th>Gasto</th><th>Proveedor</th><th>Comprobante</th><th>Pago</th><th className="num">Importe</th><th></th></tr>
+            <tr><th>Gasto</th><th>Pagó</th><th>Proveedor</th><th>Comprobante</th><th>Pago</th><th className="num">Importe</th><th></th></tr>
           </thead>
           <tbody>
             {gastos.map((g) => (
@@ -621,6 +645,7 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
                   {g.descripcion}
                   <span className="unidad-folio">{fecha(g.fecha)} · {nombreCategoria(g.categoria_id)}</span>
                 </td>
+                <td><ResumenPagadores pagos={pagos.filter((p) => p.gasto_id === g.id)} socios={socios} /></td>
                 <td className="texto-suave">{nombreProveedor(g.proveedor_id)}</td>
                 <td>
                   {g.comprobante_path
@@ -643,7 +668,7 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
                 </td>
               </tr>
             ))}
-            {gastos.length === 0 && <tr><td colSpan={6} className="vacio">Sin gastos registrados todavía.</td></tr>}
+            {gastos.length === 0 && <tr><td colSpan={7} className="vacio">Sin gastos registrados todavía.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -654,6 +679,9 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
           gasto={editando}
           categorias={categorias}
           proveedores={proveedores}
+          socios={socios}
+          pagos={editando ? pagos.filter((p) => p.gasto_id === editando.id) : []}
+          propiedad={propiedad}
           onClose={() => { setAbrirNuevo(false); setEditando(null) }}
           onGuardado={() => { setAbrirNuevo(false); setEditando(null); onCambio() }}
         />
@@ -662,11 +690,14 @@ function Gastos({ vehiculoId, gastos, categorias, onCambio }: {
   )
 }
 
-function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGuardado }: {
+function GastoModal({ vehiculoId, gasto, categorias, proveedores, socios, pagos, propiedad, onClose, onGuardado }: {
   vehiculoId: number
   gasto: Gasto | null
   categorias: CategoriaGasto[]
   proveedores: Proveedor[]
+  socios: Socio[]
+  pagos: GastoPago[]
+  propiedad: PropiedadVehiculo | null
   onClose: () => void
   onGuardado: () => void
 }) {
@@ -678,8 +709,9 @@ function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGua
     fecha: gasto?.fecha ?? hoyISO(),
     pagado: gasto ? gasto.pagado : true,
     fechaVencimiento: gasto?.fecha_vencimiento ?? '',
+    pagadores: filasIniciales(pagos, propiedad),
   })
-  const set = (k: keyof typeof form, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
+  const set = (k: keyof typeof form, v: string | boolean | FilaPago[]) => setForm((f) => ({ ...f, [k]: v }))
   // El archivo no cabe en el borrador de localStorage: se elige al final.
   const [archivo, setArchivo] = useState<File | null>(null)
   const [vista, setVista] = useState<string | null>(null)
@@ -696,6 +728,8 @@ function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGua
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     if (!supabase) return
+    const errPagadores = validarPagos(form.pagadores)
+    if (errPagadores) { setError(errPagadores); return }
     setGuardando(true)
     setError(null)
     let rutaNueva: string | null = null
@@ -723,9 +757,9 @@ function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGua
       fecha_pago: form.pagado ? (gasto?.pagado ? gasto.fecha_pago : null) ?? form.fecha : null,
       fecha_vencimiento: form.pagado ? null : form.fechaVencimiento || null,
     }
-    const { error } = gasto
-      ? await supabase.from('gasto').update(datos).eq('id', gasto.id)
-      : await supabase.from('gasto').insert({ ...datos, pagador_tipo: 'empresa' })
+    const { data: guardado, error } = gasto
+      ? await supabase.from('gasto').update(datos).eq('id', gasto.id).select('id').single()
+      : await supabase.from('gasto').insert({ ...datos, pagador_tipo: 'empresa' }).select('id').single()
     if (error) {
       await quitarArchivos([rutaNueva])  // no dejar un archivo suelto en Storage
       setGuardando(false)
@@ -733,7 +767,9 @@ function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGua
       return
     }
     if (anterior && anterior !== ruta) await quitarArchivos([anterior])
+    const errPagos = await guardarPagos((guardado as { id: number }).id, form.pagadores)
     setGuardando(false)
+    if (errPagos) { setError(`El gasto se guardó, pero no quién lo pagó: ${errPagos}`); return }
     limpiarBorrador()
     onGuardado()
   }
@@ -758,6 +794,9 @@ function GastoModal({ vehiculoId, gasto, categorias, proveedores, onClose, onGua
           <Campo label="Importe"><input className="input" required type="number" step="0.01" min={0} value={form.importe} onChange={(e) => set('importe', e.target.value)} /></Campo>
           <Campo label="Fecha"><input className="input" required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} /></Campo>
         </div>
+        <Campo label="¿Quién pagó?" ayuda="Uno o varios socios. Cuenta en el capital de cada uno al repartir la venta.">
+          <PagadoresEditor filas={form.pagadores} socios={socios} importe={Number(form.importe) || 0} onChange={(f) => set('pagadores', f)} />
+        </Campo>
         <div className="form-grid">
           <Campo label="¿Ya se pagó?">
             <label className="check" style={{ minHeight: 42 }}>
@@ -1104,28 +1143,27 @@ function CapitalSocios({ vehiculoId, aportaciones, socios, onCambio }: {
 
   return (
     <Seccion
-      titulo="Capital de socios en esta unidad"
-      descripcion={`Total aportado: ${mxn(total)}. El % define cómo se reparte la utilidad al cerrar la venta.`}
-      acciones={<button className="btn btn-primario" onClick={() => setAbrirForm(true)}>+ Asignar socio</button>}
+      titulo="Aportaciones a la compra"
+      descripcion={`Lo que cada socio puso para comprar la unidad · total ${mxn(total)}. Los gastos que pagó cada uno se suman arriba, en "Propiedad de la unidad".`}
+      acciones={<button className="btn btn-primario" onClick={() => setAbrirForm(true)}>+ Registrar aportación</button>}
     >
       {error && <div style={{ marginBottom: 12 }}><Alerta>{error}</Alerta></div>}
       <div className="tabla-wrap">
         <table className="tabla">
-          <thead><tr><th>Socio</th><th>Fecha</th><th className="num">Monto</th><th className="num">Participación</th><th></th></tr></thead>
+          <thead><tr><th>Socio</th><th>Fecha</th><th className="num">Monto</th><th></th></tr></thead>
           <tbody>
             {aportaciones.map((a) => (
               <tr key={a.id}>
                 <td style={{ fontWeight: 500 }}>{nombreSocio(a.socio_id)}</td>
                 <td>{fecha(a.fecha)}</td>
                 <td className="num">{mxn(a.monto)}</td>
-                <td className="num">{total > 0 ? `${((a.monto / total) * 100).toFixed(1)}%` : '—'}</td>
                 <td className="acciones-celda">
                   <button className="btn-link" onClick={() => setEditando(a)}>Editar</button>
                   <button className="btn-link peligro" onClick={() => eliminar(a)}>Eliminar</button>
                 </td>
               </tr>
             ))}
-            {aportaciones.length === 0 && <tr><td colSpan={5} className="vacio">Ningún socio tiene capital asignado a esta unidad.</td></tr>}
+            {aportaciones.length === 0 && <tr><td colSpan={4} className="vacio">Nadie ha registrado aportación a la compra de esta unidad.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -1175,7 +1213,7 @@ function AportacionVehiculoModal({ vehiculoId, socios, aportacion, onClose, onGu
   }
 
   return (
-    <Modal titulo={aportacion ? 'Editar aportación' : 'Asignar socio a esta unidad'} onClose={onClose}>
+    <Modal titulo={aportacion ? 'Editar aportación' : 'Aportación a la compra'} onClose={onClose}>
       <form onSubmit={onSubmit} className="form">
         <Campo label="Socio">
           <select className="select" required value={form.socioId} onChange={(e) => set('socioId', e.target.value)}>
