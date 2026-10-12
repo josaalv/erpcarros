@@ -875,3 +875,23 @@ corrido, movimientos editables), Préstamos, Aportaciones a compras y
 Liquidaciones; `AportacionCompraModal` compartido (Socios y Expediente):
 si la compra es del fondo y no le alcanza, pide quién le presta y registra
 el préstamo por la diferencia. `mxn()` muestra negativos como "−$255,000".
+
+**Parte 3 construida (`028_cierre_por_modalidad_y_cuenta.sql`)**: función
+`liquidacion_de_venta(p_venta_id)` (invoker, solo admin; sirve de vista
+previa): única → todo al dueño (capital = costo; si no hay dueño asignado y
+un solo socio tiene capital, es él; error si otro socio puso dinero);
+copropiedad → capital/total con error si hay gastos sin pagador o si el
+capital no cuadra con el costo (±$1); excepción → % acordado × total de la
+venta (error si el reparto no suma 100%). `cerrar_financiero` ahora exige
+saldo por cobrar = 0 (`v_saldo_venta`, la toma a cuenta cuenta como pago),
+inserta la liquidación desde esa función y marca pagados los préstamos de
+la unidad; `recalcular_cierre` usa la misma función. `v_movimiento_socio`
+suma la liquidación (fecha de cierre en hora de México) como abono a la
+cuenta: el dinero queda reinvertido; sacarlo es un retiro. `liquidacion.pagado`
+ya no se usa en la UI. Verificado en base con los tres ejemplos validados
+(T-1 única: B 320k; T-2 copropiedad: A 87.5k / B 62.5k; T-3 excepción:
+125k c/u), préstamo pagado al cerrar, venta con saldo rechazada, y cuentas
+finales A 362.5k / B 290.5k cuadran movimiento por movimiento. UI: Ventas
+por cerrar muestra "Falta cobrar" y `CierreModal` con la vista previa del
+reparto y los préstamos que se pagan; Socios → Liquidaciones como abonos.
+Sin construir: toma a cuenta (quién es dueño del carro recibido).
