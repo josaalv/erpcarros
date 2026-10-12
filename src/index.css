@@ -318,3 +318,7 @@ details.plegable summary { cursor: pointer; color: var(--text-soft); font-weight
 .pagador-pct { display: flex; align-items: center; gap: 4px; width: 110px; }
 .pagador-pct .input { text-align: right; }
 .pagador-pie { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+/* Socios: nombre sin partirse y acciones apiladas en tablas anchas */
+.celda-nombre { white-space: nowrap; font-weight: 600; }
+.acciones-columna { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }

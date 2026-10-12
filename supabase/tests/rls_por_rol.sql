@@ -36,6 +36,8 @@ insert into gasto_pago (gasto_id, socio_id, porcentaje)
   where v.id_interno = 'PRUEBA-RLS' and s.nombre = 'Socio prueba RLS' limit 1;
 insert into vehiculo_reparto (vehiculo_id, socio_id, porcentaje)
   select v.id, s.id, 1 from vehiculo v, socio s where v.id_interno = 'PRUEBA-RLS' and s.nombre = 'Socio prueba RLS';
+-- Fondo común (027): saldo inicial del socio de prueba.
+insert into movimiento_fondo (socio_id, tipo, monto) select id, 'saldo_inicial', 100000 from socio where nombre = 'Socio prueba RLS';
 update compra set precio = 81000 where vehiculo_id = (select id from vehiculo where id_interno = 'PRUEBA-RLS');  -- deja una fila en bitacora
 
 create temporary table prueba_resultado (rol text, falla text);
@@ -59,6 +61,9 @@ begin
   end if;
   if exists (select 1 from gasto_pago) or exists (select 1 from vehiculo_reparto) or exists (select 1 from v_capital_socio_vehiculo) then
     insert into prueba_resultado values (r, 've quién pagó / reparto / capital de socios');
+  end if;
+  if exists (select 1 from movimiento_fondo) or exists (select 1 from prestamo_socio) or exists (select 1 from v_cuenta_socio) or exists (select 1 from v_movimiento_socio) then
+    insert into prueba_resultado values (r, 've el fondo común / préstamos / cuentas de socios');
   end if;
   if exists (select 1 from v_vehiculo_ficha where precio_minimo is not null or costo_total is not null or utilidad is not null or margen is not null) then
     insert into prueba_resultado values (r, 've precio mínimo / costo / utilidad en v_vehiculo_ficha');
@@ -198,6 +203,9 @@ begin
   if not exists (select 1 from v_capital_socio_vehiculo c join vehiculo v on v.id = c.vehiculo_id
                  where v.id_interno = 'PRUEBA-RLS' and c.capital = 86000 and c.participacion_acordada = 1) then
     insert into prueba_resultado values (r, 'no ve el capital del socio (85,000 compra + 1,000 gasto) ni el reparto (control)');
+  end if;
+  if not exists (select 1 from v_cuenta_socio where nombre = 'Socio prueba RLS' and liquido = 14000) then
+    insert into prueba_resultado values (r, 'no ve la cuenta del socio (100,000 − 85,000 compra − 1,000 gasto) (control)');
   end if;
 end $$;
 reset role;

@@ -113,6 +113,61 @@ export interface Aportacion {
   socio_id: number
   monto: number
   fecha: string
+  /** fondo: de su parte del fondo común · bolsa: dinero propio (027). */
+  origen: 'fondo' | 'bolsa'
+}
+
+export type TipoMovimientoFondo = 'saldo_inicial' | 'aporte' | 'retiro' | 'ajuste'
+
+/** Movimiento directo del fondo común (027). */
+export interface MovimientoFondo {
+  id: number
+  socio_id: number
+  fecha: string
+  tipo: TipoMovimientoFondo
+  /** Positivo, salvo en ajuste. */
+  monto: number
+  origen_dinero: string | null
+  nota: string | null
+}
+
+/** Préstamo sin interés entre socios (027). */
+export interface PrestamoSocio {
+  id: number
+  prestamista_id: number
+  deudor_id: number
+  vehiculo_id: number | null
+  monto: number
+  fecha: string
+  pagado: boolean
+  fecha_pago: string | null
+  nota: string | null
+}
+
+/** v_movimiento_socio: estado de cuenta (efecto = cambio en su fondo líquido). */
+export interface MovimientoSocio {
+  socio_id: number
+  fecha: string
+  tipo: TipoMovimientoFondo | 'compra' | 'gasto' | 'prestamo_dado' | 'prestamo_recibido' | 'prestamo_cobrado' | 'prestamo_pagado'
+  monto: number
+  efecto: number
+  vehiculo_id: number | null
+  detalle: string | null
+  fuente: 'movimiento_fondo' | 'aportacion' | 'gasto_pago' | 'prestamo_socio'
+  fuente_id: number
+}
+
+/** v_cuenta_socio: saldo de cada socio en el fondo común. */
+export interface CuentaSocio {
+  socio_id: number
+  nombre: string
+  activo: boolean
+  liquido: number
+  invertido: number
+  debe: number
+  le_deben: number
+  patrimonio: number
+  pertenencia: number | null
 }
 
 /** Modalidad de propiedad de una unidad (migración 026). */

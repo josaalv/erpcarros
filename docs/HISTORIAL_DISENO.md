@@ -855,3 +855,23 @@ socio, aviso de gastos sin pagador) arriba de "Aportaciones a la compra"
 `useBorrador` ahora completa con el valor inicial los campos que falten en
 un borrador viejo. `cerrar_financiero` sigue usando `v_participacion_socio`
 (solo compra) hasta la parte 3.
+
+**Parte 2 construida (`027_fondo_comun_cuentas_socios.sql`)**: `aportacion.origen`
+('fondo'|'bolsa', default fondo); `movimiento_fondo` (saldo_inicial, aporte
+con `origen_dinero` informativo, retiro, ajuste ±); `prestamo_socio`
+(prestamista, deudor, unidad opcional, monto, pagado/fecha_pago; sin
+interés). `v_movimiento_socio` arma el estado de cuenta uniendo movimientos,
+aportaciones y gastos pagados (efecto 0 si fue de su bolsa) y préstamos
+(dado/recibido y, al pagarse, cobrado/pagado). `v_cuenta_socio`: líquido
+(suma de efectos), invertido (capital en unidades no vendidas, de
+`v_capital_socio_vehiculo`), debe, le_deben, patrimonio = líquido +
+invertido + le_deben − debe, pertenencia = patrimonio / total. Retiro
+máximo (`lib/fondo.ts`): pertenencia × fondo líquido total, sin pasar de su
+propio líquido (validado en la UI). Verificado en base con el ejemplo del
+carro 1: A 245k líquido / le deben 55k / patrimonio 300k (58.25%); B 0
+líquido / 270k invertido / debe 55k / 215k (41.75%). UI: pantalla Socios
+("Socios y fondo común") con pestañas Cuentas (estado de cuenta con saldo
+corrido, movimientos editables), Préstamos, Aportaciones a compras y
+Liquidaciones; `AportacionCompraModal` compartido (Socios y Expediente):
+si la compra es del fondo y no le alcanza, pide quién le presta y registra
+el préstamo por la diferencia. `mxn()` muestra negativos como "−$255,000".
