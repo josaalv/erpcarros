@@ -14,7 +14,7 @@ y agrega ahí las decisiones nuevas (aquí solo un resumen de una línea).
   (`https://josaalv.github.io/erpcarros/`, deploy en cada push a `main`).
 - Supabase "Erp carros" (`qiqowqakrarcqvxdiddm`): Postgres 17 + Auth + RLS
   + Storage (`documentos-vehiculo`) + Edge Function `prosubastas`.
-- Migraciones en `supabase/migrations/` (001…027) se aplican a mano por MCP;
+- Migraciones en `supabase/migrations/` (001…028) se aplican a mano por MCP;
   guardar cada una también como archivo. Después: `get_advisors` (security)
   y `supabase/tests/rls_por_rol.sql` (debe dar `OK`).
 
@@ -64,14 +64,15 @@ y agrega ahí las decisiones nuevas (aquí solo un resumen de una línea).
   guardarlo.
 - **Cargar contratos**: un PDF por marca con las ganadas; alta masiva
   (vehículo + compra + contrato), cruce por stock/serie con la evaluación.
-- **Socios y fondo común** (diseño completo en el historial): partes 1 y 2
-  HECHAS. 026: modalidad única/copropiedad/excepción, quién pagó cada gasto
-  (% y origen fondo/bolsa), `v_capital_socio_vehiculo` (UI
-  `components/Propiedad.tsx`, `lib/propiedad.ts`). 027: `aportacion.origen`,
-  `movimiento_fondo`, `prestamo_socio`, `v_movimiento_socio` (estado de
-  cuenta; el saldo líquido se CALCULA, no se guarda) y `v_cuenta_socio`
-  (UI `components/Fondo.tsx`, `lib/fondo.ts`, pantalla Socios). Falta parte
-  3: cierre solo con pago completo + liquidación por modalidad abonada a la
-  cuenta (y pago de préstamos de la unidad). `gasto_pago`, `vehiculo_reparto`
-  y `prestamo_socio` no cascadean: la app los quita antes de borrar.
+- **Socios y fondo común**: TERMINADO (partes 1–3; detalle en el
+  historial). 026 propiedad + quién pagó cada gasto; 027 fondo común,
+  cuentas y préstamos (saldo líquido CALCULADO en `v_movimiento_socio`);
+  028 `liquidacion_de_venta(venta)` reparte por modalidad (única / copro-
+  piedad / excepción = % del total de la venta) y la usan
+  `cerrar_financiero` (solo con saldo por cobrar = 0; paga los préstamos de
+  la unidad) y `recalcular_cierre`; lo liquidado se abona a la cuenta del
+  socio (tipo 'liquidacion'), ya no hay "por pagar a socios".
+  `gasto_pago`, `vehiculo_reparto` y `prestamo_socio` no cascadean: la app
+  los quita antes de borrar. Pendiente: qué pasa con el carro recibido en
+  toma a cuenta (propuesta en el historial, sin construir).
 - Carga de históricos y Taller/Consignación: pendientes de definir.

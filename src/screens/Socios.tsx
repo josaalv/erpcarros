@@ -40,7 +40,7 @@ export default function Socios() {
       supabase.from('v_cuenta_socio').select('*'),
       supabase.from('aportacion').select('*').order('fecha', { ascending: false }),
       supabase.from('prestamo_socio').select('*').order('pagado').order('fecha', { ascending: false }),
-      supabase.from('liquidacion').select('*, vehiculo:vehiculo_id(id_interno), socio:socio_id(nombre)').order('pagado').order('id', { ascending: false }),
+      supabase.from('liquidacion').select('*, vehiculo:vehiculo_id(id_interno), socio:socio_id(nombre)').order('id', { ascending: false }),
       supabase.from('v_vehiculo_ficha').select('id, id_interno, marca, modelo, anio, estado_comercial').order('id_interno'),
     ])
     setSocios((s.data ?? []) as Socio[])
@@ -75,7 +75,7 @@ export default function Socios() {
   const cuentaDe = (sid: number) => cuentas.find((c) => c.socio_id === sid)
   const suma = (k: 'liquido' | 'invertido' | 'patrimonio') => cuentas.reduce((acc, c) => acc + c[k], 0)
   const pendientes = prestamos.filter((p) => !p.pagado)
-  const pendientesPago = liquidaciones.filter((l) => !l.pagado)
+  const utilidadAbonada = liquidaciones.reduce((acc, l) => acc + l.utilidad_asignada, 0)
 
   return (
     <div>
@@ -94,7 +94,7 @@ export default function Socios() {
         <Kpi label="Fondo líquido" valor={mxn(suma('liquido'))} nota="Disponible para ir a subastas" />
         <Kpi label="Invertido en unidades" valor={mxn(suma('invertido'))} nota="Capital en unidades que aún no se venden" />
         <Kpi label="Préstamos pendientes" valor={mxn(pendientes.reduce((acc, p) => acc + p.monto, 0))} nota={`${pendientes.length} entre socios`} />
-        <Kpi label="Por pagar a socios" valor={mxn(pendientesPago.reduce((acc, l) => acc + l.monto_a_pagar, 0))} nota={`${pendientesPago.length} liquidaciones pendientes`} />
+        <Kpi label="Utilidad repartida" valor={mxn(utilidadAbonada)} nota={`${liquidaciones.length} liquidaciones abonadas a cuentas`} />
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alerta>{error}</Alerta></div>}
@@ -103,7 +103,7 @@ export default function Socios() {
         <button className={`tab${pestana === 'cuentas' ? ' activa' : ''}`} onClick={() => setPestana('cuentas')}>Cuentas ({socios.length})</button>
         <button className={`tab${pestana === 'prestamos' ? ' activa' : ''}`} onClick={() => setPestana('prestamos')}>Préstamos ({pendientes.length} pendientes)</button>
         <button className={`tab${pestana === 'aportaciones' ? ' activa' : ''}`} onClick={() => setPestana('aportaciones')}>Aportaciones a compras ({aportaciones.length})</button>
-        <button className={`tab${pestana === 'liquidaciones' ? ' activa' : ''}`} onClick={() => setPestana('liquidaciones')}>Liquidaciones ({pendientesPago.length} por pagar)</button>
+        <button className={`tab${pestana === 'liquidaciones' ? ' activa' : ''}`} onClick={() => setPestana('liquidaciones')}>Liquidaciones ({liquidaciones.length})</button>
       </div>
 
       {pestana === 'cuentas' && (
@@ -231,27 +231,21 @@ export default function Socios() {
 
       {pestana === 'liquidaciones' && (
         <>
-          <p className="texto-suave" style={{ marginTop: 0 }}>Se generan solas al cerrar una venta. Monto a pagar = capital aportado + su parte de la utilidad.</p>
+          <p className="texto-suave" style={{ marginTop: 0 }}>Se generan solas al cerrar una venta (ya cobrada) y se abonan a la cuenta del socio en el fondo: capital + su parte de la utilidad, según la modalidad de la unidad. Para sacar dinero, registra un retiro.</p>
           <div className="tabla-wrap">
             <table className="tabla">
               <thead>
-                <tr><th>Unidad</th><th>Socio</th><th className="num">Participación</th><th className="num">Utilidad</th><th className="num">A pagar</th><th>Pago</th></tr>
+                <tr><th>Unidad</th><th>Socio</th><th className="num">Capital</th><th className="num">Participación</th><th className="num">Utilidad</th><th className="num">Abonado a su cuenta</th></tr>
               </thead>
               <tbody>
                 {liquidaciones.map((l) => (
                   <tr key={l.id}>
                     <td>{l.vehiculo_id_interno ?? '—'}</td>
                     <td style={{ fontWeight: 500 }}>{l.socio_nombre ?? '—'}</td>
+                    <td className="num">{mxn(l.capital_aportado)}</td>
                     <td className="num">{porcentaje(l.participacion)}</td>
-                    <td className="num">{mxn(l.utilidad_asignada)}</td>
+                    <td className={`num ${l.utilidad_asignada < 0 ? 'texto-peligro' : ''}`}>{mxn(l.utilidad_asignada)}</td>
                     <td className="num" style={{ fontWeight: 600 }}>{mxn(l.monto_a_pagar)}</td>
-                    <td>
-                      <label className="check">
-                        <input type="checkbox" checked={l.pagado}
-                          onChange={(e) => ejecutar(supabase!.from('liquidacion').update({ pagado: e.target.checked, fecha_pago: e.target.checked ? hoyISO() : null }).eq('id', l.id))} />
-                        {l.pagado ? <Badge tono="ok">Pagado {fecha(l.fecha_pago)}</Badge> : <Badge tono="aviso">Pendiente</Badge>}
-                      </label>
-                    </td>
                   </tr>
                 ))}
                 {liquidaciones.length === 0 && <tr><td colSpan={6} className="vacio">Todavía no hay liquidaciones.</td></tr>}
