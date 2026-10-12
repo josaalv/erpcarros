@@ -14,7 +14,7 @@ y agrega ahí las decisiones nuevas (aquí solo un resumen de una línea).
   (`https://josaalv.github.io/erpcarros/`, deploy en cada push a `main`).
 - Supabase "Erp carros" (`qiqowqakrarcqvxdiddm`): Postgres 17 + Auth + RLS
   + Storage (`documentos-vehiculo`) + Edge Function `prosubastas`.
-- Migraciones en `supabase/migrations/` (001…026) se aplican a mano por MCP;
+- Migraciones en `supabase/migrations/` (001…027) se aplican a mano por MCP;
   guardar cada una también como archivo. Después: `get_advisors` (security)
   y `supabase/tests/rls_por_rol.sql` (debe dar `OK`).
 
@@ -64,11 +64,14 @@ y agrega ahí las decisiones nuevas (aquí solo un resumen de una línea).
   guardarlo.
 - **Cargar contratos**: un PDF por marca con las ganadas; alta masiva
   (vehículo + compra + contrato), cruce por stock/serie con la evaluación.
-- **Socios y fondo común** (diseño completo en el historial): parte 1 HECHA
-  (026: modalidad única/copropiedad/excepción, quién pagó cada gasto con %
-  y origen fondo/bolsa, `v_capital_socio_vehiculo`; UI en
-  `src/components/Propiedad.tsx` + `src/lib/propiedad.ts`). Faltan parte 2
-  (fondo común y cuentas por socio) y parte 3 (cierre solo con pago
-  completo + liquidación por modalidad). `gasto_pago`/`vehiculo_reparto` no
-  cascadean: la app los quita antes de borrar gasto/unidad.
+- **Socios y fondo común** (diseño completo en el historial): partes 1 y 2
+  HECHAS. 026: modalidad única/copropiedad/excepción, quién pagó cada gasto
+  (% y origen fondo/bolsa), `v_capital_socio_vehiculo` (UI
+  `components/Propiedad.tsx`, `lib/propiedad.ts`). 027: `aportacion.origen`,
+  `movimiento_fondo`, `prestamo_socio`, `v_movimiento_socio` (estado de
+  cuenta; el saldo líquido se CALCULA, no se guarda) y `v_cuenta_socio`
+  (UI `components/Fondo.tsx`, `lib/fondo.ts`, pantalla Socios). Falta parte
+  3: cierre solo con pago completo + liquidación por modalidad abonada a la
+  cuenta (y pago de préstamos de la unidad). `gasto_pago`, `vehiculo_reparto`
+  y `prestamo_socio` no cascadean: la app los quita antes de borrar.
 - Carga de históricos y Taller/Consignación: pendientes de definir.

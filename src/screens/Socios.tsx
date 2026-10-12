@@ -2,43 +2,57 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useBorrador } from '../lib/useBorrador'
 import { mxn, porcentaje, fecha, hoyISO } from '../lib/helpers'
+import { retiroMaximo } from '../lib/fondo'
+import { ORIGEN_LABEL } from '../lib/propiedad'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, Kpi, Badge } from '../components/Ui'
-import type { Socio, Aportacion, Liquidacion, VehiculoFicha } from '../types'
+import { AportacionCompraModal, EstadoCuentaModal, MovimientoModal, PrestamoModal, type UnidadOpcion } from '../components/Fondo'
+import type { Socio, Aportacion, Liquidacion, CuentaSocio, MovimientoFondo, PrestamoSocio } from '../types'
 
 type LiquidacionVista = Liquidacion & { vehiculo_id_interno?: string; socio_nombre?: string }
-type Pestana = 'socios' | 'aportaciones' | 'liquidaciones'
+type Pestana = 'cuentas' | 'prestamos' | 'aportaciones' | 'liquidaciones'
 
 /**
- * Solo admin. El FK de aportacion/liquidacion impide borrar un socio con
- * historial; para dejar de usarlo se desactiva.
+ * Solo admin. Fondo común: cada socio tiene su parte líquida (calculada de
+ * sus movimientos en v_movimiento_socio), su capital invertido en unidades
+ * sin vender y sus préstamos. El FK impide borrar un socio con historial;
+ * para dejar de usarlo se desactiva.
  */
 export default function Socios() {
   const [socios, setSocios] = useState<Socio[]>([])
+  const [cuentas, setCuentas] = useState<CuentaSocio[]>([])
   const [aportaciones, setAportaciones] = useState<Aportacion[]>([])
+  const [prestamos, setPrestamos] = useState<PrestamoSocio[]>([])
   const [liquidaciones, setLiquidaciones] = useState<LiquidacionVista[]>([])
-  const [vehiculos, setVehiculos] = useState<VehiculoFicha[]>([])
+  const [unidades, setUnidades] = useState<UnidadOpcion[]>([])
   const [cargando, setCargando] = useState(true)
-  const [pestana, setPestana] = useState<Pestana>('socios')
+  const [pestana, setPestana] = useState<Pestana>('cuentas')
   const [socioModal, setSocioModal] = useState<Socio | 'nuevo' | null>(null)
   const [aportacionModal, setAportacionModal] = useState<Aportacion | 'nueva' | null>(null)
+  const [movimientoModal, setMovimientoModal] = useState<{ movimiento: MovimientoFondo | null; socioId?: number } | null>(null)
+  const [prestamoModal, setPrestamoModal] = useState<PrestamoSocio | 'nuevo' | null>(null)
+  const [estadoCuenta, setEstadoCuenta] = useState<Socio | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function recargar() {
     if (!supabase) return
-    const [s, a, l, v] = await Promise.all([
+    const [s, c, a, p, l, v] = await Promise.all([
       supabase.from('socio').select('*').order('nombre'),
+      supabase.from('v_cuenta_socio').select('*'),
       supabase.from('aportacion').select('*').order('fecha', { ascending: false }),
+      supabase.from('prestamo_socio').select('*').order('pagado').order('fecha', { ascending: false }),
       supabase.from('liquidacion').select('*, vehiculo:vehiculo_id(id_interno), socio:socio_id(nombre)').order('pagado').order('id', { ascending: false }),
       supabase.from('v_vehiculo_ficha').select('id, id_interno, marca, modelo, anio, estado_comercial').order('id_interno'),
     ])
     setSocios((s.data ?? []) as Socio[])
+    setCuentas((c.data ?? []) as CuentaSocio[])
     setAportaciones((a.data ?? []) as Aportacion[])
+    setPrestamos((p.data ?? []) as PrestamoSocio[])
     setLiquidaciones(((l.data ?? []) as Record<string, unknown>[]).map((row) => ({
       ...(row as unknown as Liquidacion),
       vehiculo_id_interno: (row.vehiculo as { id_interno?: string } | null)?.id_interno,
       socio_nombre: (row.socio as { nombre?: string } | null)?.nombre,
     })))
-    setVehiculos((v.data ?? []) as VehiculoFicha[])
+    setUnidades((v.data ?? []) as UnidadOpcion[])
     setCargando(false)
   }
 
@@ -53,115 +67,166 @@ export default function Socios() {
 
   if (cargando) return <Cargando />
 
-  const totalAportado = (sid: number) => aportaciones.filter((a) => a.socio_id === sid).reduce((acc, a) => acc + a.monto, 0)
-  // Capital activo = aportado en unidades que aún no se venden (sigue trabajando).
-  const vendida = (vid: number) => vehiculos.find((v) => v.id === vid)?.estado_comercial === 'vendido'
-  const capitalActivo = (sid?: number) => aportaciones
-    .filter((a) => (sid === undefined || a.socio_id === sid) && !vendida(a.vehiculo_id))
-    .reduce((acc, a) => acc + a.monto, 0)
-  const totalPagado = (sid: number) => liquidaciones.filter((l) => l.socio_id === sid && l.pagado).reduce((acc, l) => acc + l.monto_a_pagar, 0)
-  const totalPendiente = (sid: number) => liquidaciones.filter((l) => l.socio_id === sid && !l.pagado).reduce((acc, l) => acc + l.monto_a_pagar, 0)
   const nombreSocio = (sid: number) => socios.find((s) => s.id === sid)?.nombre ?? '—'
-  const unidadDe = (vid: number) => {
-    const v = vehiculos.find((x) => x.id === vid)
-    return v ? `${v.marca} ${v.modelo} ${v.anio}` : '—'
+  const unidad = (vid: number | null) => {
+    const v = unidades.find((x) => x.id === vid)
+    return v ? <>{v.marca} {v.modelo} {v.anio}<span className="unidad-folio">{v.id_interno}</span></> : <span className="texto-suave">—</span>
   }
-  const folioDe = (vid: number) => vehiculos.find((x) => x.id === vid)?.id_interno ?? ''
+  const cuentaDe = (sid: number) => cuentas.find((c) => c.socio_id === sid)
+  const suma = (k: 'liquido' | 'invertido' | 'patrimonio') => cuentas.reduce((acc, c) => acc + c[k], 0)
+  const pendientes = prestamos.filter((p) => !p.pagado)
   const pendientesPago = liquidaciones.filter((l) => !l.pagado)
 
   return (
     <div>
       <PageHeader
-        titulo="Socios"
-        descripcion="Estado de cuenta de cada socio: capital trabajando en unidades activas, lo que ya se le regresó y lo que se le debe de ventas cerradas."
+        titulo="Socios y fondo común"
+        descripcion="La parte de cada socio en el fondo: lo líquido para ir a subastas, lo invertido en unidades sin vender y los préstamos entre socios."
         acciones={
           <>
-            <button className="btn btn-secundario" onClick={() => setAportacionModal('nueva')}>+ Registrar aportación</button>
+            <button className="btn btn-secundario" onClick={() => setMovimientoModal({ movimiento: null })}>+ Movimiento del fondo</button>
             <button className="btn btn-primario" onClick={() => setSocioModal('nuevo')}>+ Nuevo socio</button>
           </>
         }
       />
 
       <div className="kpis">
-        <Kpi label="Socios activos" valor={String(socios.filter((s) => s.activo).length)} />
-        <Kpi label="Capital activo" valor={mxn(capitalActivo())} nota="Invertido en unidades que aún no se venden" />
-        <Kpi label="Capital aportado (histórico)" valor={mxn(aportaciones.reduce((acc, a) => acc + a.monto, 0))} />
+        <Kpi label="Fondo líquido" valor={mxn(suma('liquido'))} nota="Disponible para ir a subastas" />
+        <Kpi label="Invertido en unidades" valor={mxn(suma('invertido'))} nota="Capital en unidades que aún no se venden" />
+        <Kpi label="Préstamos pendientes" valor={mxn(pendientes.reduce((acc, p) => acc + p.monto, 0))} nota={`${pendientes.length} entre socios`} />
         <Kpi label="Por pagar a socios" valor={mxn(pendientesPago.reduce((acc, l) => acc + l.monto_a_pagar, 0))} nota={`${pendientesPago.length} liquidaciones pendientes`} />
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alerta>{error}</Alerta></div>}
 
       <div className="tabs">
-        <button className={`tab${pestana === 'socios' ? ' activa' : ''}`} onClick={() => setPestana('socios')}>Socios ({socios.length})</button>
-        <button className={`tab${pestana === 'aportaciones' ? ' activa' : ''}`} onClick={() => setPestana('aportaciones')}>Aportaciones ({aportaciones.length})</button>
+        <button className={`tab${pestana === 'cuentas' ? ' activa' : ''}`} onClick={() => setPestana('cuentas')}>Cuentas ({socios.length})</button>
+        <button className={`tab${pestana === 'prestamos' ? ' activa' : ''}`} onClick={() => setPestana('prestamos')}>Préstamos ({pendientes.length} pendientes)</button>
+        <button className={`tab${pestana === 'aportaciones' ? ' activa' : ''}`} onClick={() => setPestana('aportaciones')}>Aportaciones a compras ({aportaciones.length})</button>
         <button className={`tab${pestana === 'liquidaciones' ? ' activa' : ''}`} onClick={() => setPestana('liquidaciones')}>Liquidaciones ({pendientesPago.length} por pagar)</button>
       </div>
 
-      {pestana === 'socios' && (
+      {pestana === 'cuentas' && (
         <div className="tabla-wrap">
           <table className="tabla">
             <thead>
               <tr>
-                <th>Socio</th><th>Contacto</th><th className="num">Capital activo</th><th className="num">Aportado histórico</th>
-                <th className="num">Ya se le pagó</th><th className="num">Por pagarle</th><th>Activo</th><th></th>
+                <th className="celda-nombre">Socio</th><th className="num">Líquido</th><th className="num">Invertido</th><th className="num">Debe</th>
+                <th className="num">Le deben</th><th className="num">Patrimonio</th><th className="num">Pertenencia</th>
+                <th className="num">Puede retirar</th><th>Activo</th><th></th>
               </tr>
             </thead>
             <tbody>
-              {socios.map((s) => (
-                <tr key={s.id} className={s.activo ? '' : 'inactivo'}>
-                  <td style={{ fontWeight: 600 }}>{s.nombre}</td>
-                  <td className="texto-suave">{[s.telefono, s.correo].filter(Boolean).join(' · ') || '—'}</td>
-                  <td className="num"><strong>{mxn(capitalActivo(s.id))}</strong></td>
-                  <td className="num">{mxn(totalAportado(s.id))}</td>
-                  <td className="num">{mxn(totalPagado(s.id))}</td>
-                  <td className={`num ${totalPendiente(s.id) > 0 ? 'texto-aviso' : ''}`}>{mxn(totalPendiente(s.id))}</td>
-                  <td>
-                    <label className="check">
-                      <input type="checkbox" checked={s.activo} onChange={(e) => ejecutar(supabase!.from('socio').update({ activo: e.target.checked }).eq('id', s.id))} />
-                      {s.activo ? 'Sí' : 'No'}
-                    </label>
-                  </td>
-                  <td className="acciones-celda">
-                    <button className="btn-link" onClick={() => setSocioModal(s)}>Editar</button>
-                    <button className="btn-link peligro" onClick={() => {
-                      if (window.confirm(`¿Eliminar a ${s.nombre}?`)) {
-                        ejecutar(supabase!.from('socio').delete().eq('id', s.id), `No se puede eliminar a ${s.nombre} porque ya tiene aportaciones o liquidaciones. Puedes desactivarlo.`)
-                      }
-                    }}>Eliminar</button>
-                  </td>
-                </tr>
-              ))}
-              {socios.length === 0 && <tr><td colSpan={8} className="vacio">Todavía no hay socios.</td></tr>}
+              {socios.map((s) => {
+                const c = cuentaDe(s.id)
+                return (
+                  <tr key={s.id} className={s.activo ? '' : 'inactivo'}>
+                    <td className="celda-nombre">{s.nombre}</td>
+                    <td className={`num ${c && c.liquido < 0 ? 'texto-peligro' : ''}`}>{mxn(c?.liquido ?? 0)}</td>
+                    <td className="num">{mxn(c?.invertido ?? 0)}</td>
+                    <td className={`num ${c && c.debe > 0 ? 'texto-aviso' : ''}`}>{mxn(c?.debe ?? 0)}</td>
+                    <td className="num">{mxn(c?.le_deben ?? 0)}</td>
+                    <td className="num"><strong>{mxn(c?.patrimonio ?? 0)}</strong></td>
+                    <td className="num">{c?.pertenencia != null ? porcentaje(c.pertenencia) : '—'}</td>
+                    <td className="num">{c ? mxn(retiroMaximo(c, cuentas)) : '—'}</td>
+                    <td>
+                      <label className="check">
+                        <input type="checkbox" checked={s.activo} onChange={(e) => ejecutar(supabase!.from('socio').update({ activo: e.target.checked }).eq('id', s.id))} />
+                        {s.activo ? 'Sí' : 'No'}
+                      </label>
+                    </td>
+                    <td className="acciones-celda acciones-columna">
+                      <button className="btn-link" onClick={() => setEstadoCuenta(s)}>Estado de cuenta</button>
+                      <button className="btn-link" onClick={() => setMovimientoModal({ movimiento: null, socioId: s.id })}>Movimiento</button>
+                      <button className="btn-link" onClick={() => setSocioModal(s)}>Editar</button>
+                      <button className="btn-link peligro" onClick={() => {
+                        if (window.confirm(`¿Eliminar a ${s.nombre}?`)) {
+                          ejecutar(supabase!.from('socio').delete().eq('id', s.id), `No se puede eliminar a ${s.nombre} porque ya tiene movimientos. Puedes desactivarlo.`)
+                        }
+                      }}>Eliminar</button>
+                    </td>
+                  </tr>
+                )
+              })}
+              {socios.length === 0 && <tr><td colSpan={10} className="vacio">Todavía no hay socios.</td></tr>}
             </tbody>
           </table>
         </div>
       )}
 
+      {pestana === 'prestamos' && (
+        <>
+          <div className="seccion-header">
+            <p className="texto-suave" style={{ margin: 0 }}>Sin interés. Se pagan al vender la unidad; quien presta no participa de la utilidad.</p>
+            <button className="btn btn-primario" onClick={() => setPrestamoModal('nuevo')}>+ Registrar préstamo</button>
+          </div>
+          <div className="tabla-wrap">
+            <table className="tabla">
+              <thead><tr><th>Fecha</th><th>Presta</th><th>Recibe</th><th>Unidad</th><th className="num">Monto</th><th>Estado</th><th></th></tr></thead>
+              <tbody>
+                {prestamos.map((p) => (
+                  <tr key={p.id}>
+                    <td style={{ whiteSpace: 'nowrap' }}>{fecha(p.fecha)}</td>
+                    <td style={{ fontWeight: 500 }}>{nombreSocio(p.prestamista_id)}</td>
+                    <td style={{ fontWeight: 500 }}>{nombreSocio(p.deudor_id)}</td>
+                    <td>{unidad(p.vehiculo_id)}{p.nota && <span className="unidad-folio">{p.nota}</span>}</td>
+                    <td className="num">{mxn(p.monto)}</td>
+                    <td>
+                      <label className="check">
+                        <input type="checkbox" checked={p.pagado}
+                          onChange={(e) => ejecutar(supabase!.from('prestamo_socio').update({ pagado: e.target.checked, fecha_pago: e.target.checked ? hoyISO() : null }).eq('id', p.id))} />
+                        {p.pagado ? <Badge tono="ok">Pagado {fecha(p.fecha_pago)}</Badge> : <Badge tono="aviso">Pendiente</Badge>}
+                      </label>
+                    </td>
+                    <td className="acciones-celda">
+                      <button className="btn-link" onClick={() => setPrestamoModal(p)}>Editar</button>
+                      <button className="btn-link peligro" onClick={() => {
+                        if (window.confirm(`¿Eliminar el préstamo de ${nombreSocio(p.prestamista_id)} a ${nombreSocio(p.deudor_id)} por ${mxn(p.monto)}?`)) {
+                          ejecutar(supabase!.from('prestamo_socio').delete().eq('id', p.id))
+                        }
+                      }}>Eliminar</button>
+                    </td>
+                  </tr>
+                ))}
+                {prestamos.length === 0 && <tr><td colSpan={7} className="vacio">No hay préstamos entre socios.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       {pestana === 'aportaciones' && (
-        <div className="tabla-wrap">
-          <table className="tabla">
-            <thead><tr><th>Fecha</th><th>Socio</th><th>Unidad</th><th className="num">Monto</th><th></th></tr></thead>
-            <tbody>
-              {aportaciones.map((a) => (
-                <tr key={a.id}>
-                  <td style={{ whiteSpace: 'nowrap' }}>{fecha(a.fecha)}</td>
-                  <td style={{ fontWeight: 500 }}>{nombreSocio(a.socio_id)}</td>
-                  <td>{unidadDe(a.vehiculo_id)}<span className="unidad-folio">{folioDe(a.vehiculo_id)}</span></td>
-                  <td className="num">{mxn(a.monto)}</td>
-                  <td className="acciones-celda">
-                    <button className="btn-link" onClick={() => setAportacionModal(a)}>Editar</button>
-                    <button className="btn-link peligro" onClick={() => {
-                      if (window.confirm(`¿Eliminar la aportación de ${nombreSocio(a.socio_id)} por ${mxn(a.monto)}?`)) {
-                        ejecutar(supabase!.from('aportacion').delete().eq('id', a.id))
-                      }
-                    }}>Eliminar</button>
-                  </td>
-                </tr>
-              ))}
-              {aportaciones.length === 0 && <tr><td colSpan={5} className="vacio">Todavía no hay aportaciones.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="seccion-header">
+            <p className="texto-suave" style={{ margin: 0 }}>Lo que cada socio puso para comprar cada unidad. Si fue del fondo, se descuenta de su parte líquida.</p>
+            <button className="btn btn-primario" onClick={() => setAportacionModal('nueva')}>+ Registrar aportación</button>
+          </div>
+          <div className="tabla-wrap">
+            <table className="tabla">
+              <thead><tr><th>Fecha</th><th>Socio</th><th>Unidad</th><th>Con qué dinero</th><th className="num">Monto</th><th></th></tr></thead>
+              <tbody>
+                {aportaciones.map((a) => (
+                  <tr key={a.id}>
+                    <td style={{ whiteSpace: 'nowrap' }}>{fecha(a.fecha)}</td>
+                    <td style={{ fontWeight: 500 }}>{nombreSocio(a.socio_id)}</td>
+                    <td>{unidad(a.vehiculo_id)}</td>
+                    <td className="texto-suave">{ORIGEN_LABEL[a.origen]}</td>
+                    <td className="num">{mxn(a.monto)}</td>
+                    <td className="acciones-celda">
+                      <button className="btn-link" onClick={() => setAportacionModal(a)}>Editar</button>
+                      <button className="btn-link peligro" onClick={() => {
+                        if (window.confirm(`¿Eliminar la aportación de ${nombreSocio(a.socio_id)} por ${mxn(a.monto)}?`)) {
+                          ejecutar(supabase!.from('aportacion').delete().eq('id', a.id))
+                        }
+                      }}>Eliminar</button>
+                    </td>
+                  </tr>
+                ))}
+                {aportaciones.length === 0 && <tr><td colSpan={6} className="vacio">Todavía no hay aportaciones.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {pestana === 'liquidaciones' && (
@@ -204,12 +269,39 @@ export default function Socios() {
         />
       )}
       {aportacionModal && (
-        <AportacionModal
+        <AportacionCompraModal
           aportacion={aportacionModal === 'nueva' ? null : aportacionModal}
           socios={socios}
-          vehiculos={vehiculos}
+          unidades={unidades}
           onClose={() => setAportacionModal(null)}
           onGuardado={() => { setAportacionModal(null); recargar() }}
+        />
+      )}
+      {movimientoModal && (
+        <MovimientoModal
+          movimiento={movimientoModal.movimiento}
+          socioId={movimientoModal.socioId}
+          socios={socios}
+          onClose={() => setMovimientoModal(null)}
+          onGuardado={() => { setMovimientoModal(null); recargar() }}
+        />
+      )}
+      {prestamoModal && (
+        <PrestamoModal
+          prestamo={prestamoModal === 'nuevo' ? null : prestamoModal}
+          socios={socios}
+          unidades={unidades}
+          onClose={() => setPrestamoModal(null)}
+          onGuardado={() => { setPrestamoModal(null); recargar() }}
+        />
+      )}
+      {estadoCuenta && !movimientoModal && (
+        <EstadoCuentaModal
+          socio={estadoCuenta}
+          unidades={unidades}
+          onEditar={(m) => setMovimientoModal({ movimiento: m })}
+          onClose={() => setEstadoCuenta(null)}
+          onCambio={recargar}
         />
       )}
     </div>
@@ -246,66 +338,6 @@ function SocioModal({ socio, onClose, onGuardado }: { socio: Socio | null; onClo
         <div className="form-grid">
           <Campo label="Teléfono"><input className="input" value={form.telefono} onChange={(e) => set('telefono', e.target.value)} /></Campo>
           <Campo label="Correo"><input className="input" type="email" value={form.correo} onChange={(e) => set('correo', e.target.value)} /></Campo>
-        </div>
-        {error && <Alerta>{error}</Alerta>}
-        <FormBotones onClose={onClose} guardando={guardando} />
-      </form>
-    </Modal>
-  )
-}
-
-function AportacionModal({ aportacion, socios, vehiculos, onClose, onGuardado }: {
-  aportacion: Aportacion | null
-  socios: Socio[]
-  vehiculos: VehiculoFicha[]
-  onClose: () => void
-  onGuardado: () => void
-}) {
-  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:aportacion:${aportacion?.id ?? 'nueva'}`, {
-    socioId: aportacion ? String(aportacion.socio_id) : '',
-    vehiculoId: aportacion ? String(aportacion.vehiculo_id) : '',
-    monto: aportacion ? String(aportacion.monto) : '',
-    fecha: aportacion?.fecha ?? hoyISO(),
-  })
-  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
-  const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!supabase) return
-    setGuardando(true)
-    setError(null)
-    const datos = { socio_id: Number(form.socioId), vehiculo_id: Number(form.vehiculoId), monto: Number(form.monto), fecha: form.fecha }
-    const { error } = aportacion
-      ? await supabase.from('aportacion').update(datos).eq('id', aportacion.id)
-      : await supabase.from('aportacion').insert(datos)
-    setGuardando(false)
-    if (error) { setError(error.message); return }
-    limpiarBorrador()
-    onGuardado()
-  }
-
-  const activos = vehiculos.filter((v) => v.estado_comercial !== 'vendido' || String(v.id) === form.vehiculoId)
-
-  return (
-    <Modal titulo={aportacion ? 'Editar aportación' : 'Registrar aportación'} onClose={onClose}>
-      <form onSubmit={onSubmit} className="form">
-        <Campo label="Socio">
-          <select className="select" required value={form.socioId} onChange={(e) => set('socioId', e.target.value)}>
-            <option value="">Elige un socio…</option>
-            {socios.filter((s) => s.activo || String(s.id) === form.socioId).map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-          </select>
-        </Campo>
-        <Campo label="Unidad">
-          <select className="select" required value={form.vehiculoId} onChange={(e) => set('vehiculoId', e.target.value)}>
-            <option value="">Elige una unidad…</option>
-            {activos.map((v) => <option key={v.id} value={v.id}>{v.id_interno} · {v.marca} {v.modelo} {v.anio}</option>)}
-          </select>
-        </Campo>
-        <div className="form-grid">
-          <Campo label="Monto"><input className="input" required type="number" step="0.01" min={0} value={form.monto} onChange={(e) => set('monto', e.target.value)} /></Campo>
-          <Campo label="Fecha"><input className="input" required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} /></Campo>
         </div>
         {error && <Alerta>{error}</Alerta>}
         <FormBotones onClose={onClose} guardando={guardando} />

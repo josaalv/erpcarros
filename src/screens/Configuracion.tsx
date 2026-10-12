@@ -413,6 +413,12 @@ function BorrarModal({ unidades, onClose, onHecho }: { unidades: number; onClose
     if (error) { setBorrando(false); setError(`No se pudo hacer el respaldo, no se borró nada: ${error.message}`); return }
     const r = data as { sufijo: string; respaldado: Record<string, number> }
 
+    // Préstamos entre socios ligados a una unidad (027): sin cascada. Los que
+    // no son de una unidad son movimientos del fondo y se conservan.
+    {
+      const { error: errPrestamos } = await supabase.from('prestamo_socio').delete().eq('es_demo', false).not('vehiculo_id', 'is', null)
+      if (errPrestamos) { setBorrando(false); setError(`Respaldo ${r.sufijo} listo, pero falló el borrado de préstamos: ${errPrestamos.message}`); return }
+    }
     for (const tabla of ['cobro', 'gasto_pago', 'vehiculo_reparto', 'evaluacion_puja', 'subasta_unidad', 'subasta_listado', 'vehiculo', 'subasta'] as const) {
       const { error: errBorrar } = await supabase.from(tabla).delete().eq('es_demo', false)
       if (errBorrar) {

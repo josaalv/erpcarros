@@ -13,7 +13,8 @@ import { miniatura } from '../lib/miniatura'
 import { Bitacora } from '../components/Bitacora'
 import { FotosUnidad } from '../components/FotosUnidad'
 import { PagadoresEditor, PropiedadUnidad, ResumenPagadores } from '../components/Propiedad'
-import { filasIniciales, guardarPagos, validarPagos, type FilaPago, type PropiedadVehiculo } from '../lib/propiedad'
+import { ORIGEN_LABEL, filasIniciales, guardarPagos, validarPagos, type FilaPago, type PropiedadVehiculo } from '../lib/propiedad'
+import { AportacionCompraModal } from '../components/Fondo'
 import { Modal, FormBotones, PageHeader, Campo, Alerta, Cargando, Dato, EtiquetaBadge, Seccion, Badge } from '../components/Ui'
 import type { VehiculoFicha, Gasto, GastoPago, Proveedor, TipoDocumento, Documento, Aportacion, Socio, CategoriaGasto } from '../types'
 
@@ -412,6 +413,9 @@ function EliminarUnidad({ veh, documentos, gastos, onEliminada }: { veh: Vehicul
     }
     const { error: errReparto } = await supabase.from('vehiculo_reparto').delete().eq('vehiculo_id', veh.id)
     if (errReparto) { setEliminando(false); setError(errReparto.message); return }
+    // Préstamos entre socios por esta unidad (027): sin cascada.
+    const { error: errPrestamos } = await supabase.from('prestamo_socio').delete().eq('vehiculo_id', veh.id)
+    if (errPrestamos) { setEliminando(false); setError(errPrestamos.message); return }
     const { data: conFotos } = await supabase.from('vehiculo').select('fotos').eq('id', veh.id).maybeSingle()
     await quitarArchivos([
       ...documentos.map((d) => d.archivo_path), ...gastos.map((g) => g.comprobante_path),
@@ -1150,12 +1154,13 @@ function CapitalSocios({ vehiculoId, aportaciones, socios, onCambio }: {
       {error && <div style={{ marginBottom: 12 }}><Alerta>{error}</Alerta></div>}
       <div className="tabla-wrap">
         <table className="tabla">
-          <thead><tr><th>Socio</th><th>Fecha</th><th className="num">Monto</th><th></th></tr></thead>
+          <thead><tr><th>Socio</th><th>Fecha</th><th>Con qué dinero</th><th className="num">Monto</th><th></th></tr></thead>
           <tbody>
             {aportaciones.map((a) => (
               <tr key={a.id}>
                 <td style={{ fontWeight: 500 }}>{nombreSocio(a.socio_id)}</td>
                 <td>{fecha(a.fecha)}</td>
+                <td className="texto-suave">{ORIGEN_LABEL[a.origen]}</td>
                 <td className="num">{mxn(a.monto)}</td>
                 <td className="acciones-celda">
                   <button className="btn-link" onClick={() => setEditando(a)}>Editar</button>
@@ -1163,13 +1168,13 @@ function CapitalSocios({ vehiculoId, aportaciones, socios, onCambio }: {
                 </td>
               </tr>
             ))}
-            {aportaciones.length === 0 && <tr><td colSpan={4} className="vacio">Nadie ha registrado aportación a la compra de esta unidad.</td></tr>}
+            {aportaciones.length === 0 && <tr><td colSpan={5} className="vacio">Nadie ha registrado aportación a la compra de esta unidad.</td></tr>}
           </tbody>
         </table>
       </div>
 
       {(abrirForm || editando) && (
-        <AportacionVehiculoModal
+        <AportacionCompraModal
           vehiculoId={vehiculoId}
           socios={socios}
           aportacion={editando}
@@ -1178,56 +1183,5 @@ function CapitalSocios({ vehiculoId, aportaciones, socios, onCambio }: {
         />
       )}
     </Seccion>
-  )
-}
-
-function AportacionVehiculoModal({ vehiculoId, socios, aportacion, onClose, onGuardado }: {
-  vehiculoId: number
-  socios: Socio[]
-  aportacion: Aportacion | null
-  onClose: () => void
-  onGuardado: () => void
-}) {
-  const [form, setForm, limpiarBorrador] = useBorrador(`borrador:aportacion-vehiculo:${vehiculoId}:${aportacion?.id ?? 'nueva'}`, {
-    socioId: aportacion ? String(aportacion.socio_id) : '',
-    monto: aportacion ? String(aportacion.monto) : '',
-    fecha: aportacion?.fecha ?? hoyISO(),
-  })
-  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
-  const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!supabase) return
-    setGuardando(true)
-    setError(null)
-    const datos = { socio_id: Number(form.socioId), vehiculo_id: vehiculoId, monto: Number(form.monto), fecha: form.fecha }
-    const { error } = aportacion
-      ? await supabase.from('aportacion').update(datos).eq('id', aportacion.id)
-      : await supabase.from('aportacion').insert(datos)
-    setGuardando(false)
-    if (error) { setError(error.message); return }
-    limpiarBorrador()
-    onGuardado()
-  }
-
-  return (
-    <Modal titulo={aportacion ? 'Editar aportación' : 'Aportación a la compra'} onClose={onClose}>
-      <form onSubmit={onSubmit} className="form">
-        <Campo label="Socio">
-          <select className="select" required value={form.socioId} onChange={(e) => set('socioId', e.target.value)}>
-            <option value="">Elige un socio…</option>
-            {socios.filter((s) => s.activo || String(s.id) === form.socioId).map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-          </select>
-        </Campo>
-        <div className="form-grid">
-          <Campo label="Monto aportado"><input className="input" required type="number" step="0.01" min={0} value={form.monto} onChange={(e) => set('monto', e.target.value)} /></Campo>
-          <Campo label="Fecha"><input className="input" required type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} /></Campo>
-        </div>
-        {error && <Alerta>{error}</Alerta>}
-        <FormBotones onClose={onClose} guardando={guardando} />
-      </form>
-    </Modal>
   )
 }

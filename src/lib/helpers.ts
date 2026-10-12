@@ -1,6 +1,8 @@
 export function mxn(valor: number | null | undefined): string {
   if (valor === null || valor === undefined) return '—'
-  return '$' + Math.round(valor).toLocaleString('es-MX')
+  const n = Math.round(valor)
+  // "−$255,000" en vez de "$-255,000".
+  return (n < 0 ? '−$' : '$') + Math.abs(n).toLocaleString('es-MX')
 }
 
 export function porcentaje(valor: number | null | undefined): string {
