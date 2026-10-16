@@ -7,10 +7,11 @@ import { supabase } from './supabase'
  *   /subastas/2026_10_09/            → una carpeta por patio (GDL/, TOL/, MID/)
  *   /subastas/2026_10_09/GDL/        → un PDF por empresa vendedora
  *   /subastas/2026_10_09/GDL/01.-FC_GDL-Listado de Unidades (…).pdf
- * Dentro de un patio, las subcarpetas "1er/", "2do/"… son avances anteriores
- * del listado; los PDF sueltos en la carpeta del patio son el listado final
- * de participación. Se usa siempre la versión más reciente: la del patio si
- * tiene PDFs, si no el avance más alto.
+ * También hay subastas con prefijo y el patio ANTES de la fecha:
+ *   /subastas/Subasta_IA/TOL/2026_10_16/3er/01. IA TOL - Listado (LF …).pdf
+ * Dentro de un patio, las subcarpetas "1er/", "2do/"… son avances del
+ * listado. Si algún PDF dice "LF" (listado final) se usan esos; si no, los
+ * PDF sueltos en la carpeta del patio y, si no hay, el avance más alto.
  */
 
 const BASE = 'https://prosubastas.com.mx/subastas/'
@@ -43,10 +44,24 @@ export async function descargarListado(url: string): Promise<Blob> {
   return (await traer(url)).blob()
 }
 
+const ES_FECHA = /^(\d{4})_(\d{2})_(\d{2})$/
+
+/**
+ * Carpetas de la ruta sin el PDF, la posición de la fecha y el patio: el que
+ * sigue a la fecha (…/2026_10_09/GDL/) o, con prefijo, el que la antecede
+ * (…/Subasta_IA/TOL/2026_10_16/).
+ */
+function rutaDe(pathname: string): { partes: string[]; iFecha: number; patio: string } {
+  const partes = decodeURIComponent(pathname).replace(/^\/subastas\//, '').split('/').filter(Boolean).filter((p) => !/\.pdf$/i.test(p))
+  const iFecha = partes.findIndex((p) => ES_FECHA.test(p))
+  const patio = iFecha === 0 ? partes[1] ?? '' : iFecha > 0 ? partes[iFecha - 1] : ''
+  return { partes, iFecha, patio }
+}
+
 function datosDeUrl(url: string): { fecha: string; patio: string } {
-  const partes = decodeURIComponent(new URL(url).pathname).replace(/^\/subastas\//, '').split('/').filter(Boolean)
-  const f = partes[0]?.match(/^(\d{4})_(\d{2})_(\d{2})$/)
-  return { fecha: f ? `${f[1]}-${f[2]}-${f[3]}` : '', patio: partes[1] && !partes[1].endsWith('.pdf') ? partes[1] : '' }
+  const { partes, iFecha, patio } = rutaDe(new URL(url).pathname)
+  const f = iFecha >= 0 ? partes[iFecha].match(ES_FECHA) : null
+  return { fecha: f ? `${f[1]}-${f[2]}-${f[3]}` : '', patio }
 }
 
 function enlaces(html: string, carpeta: string): { pdfs: string[]; carpetas: string[] } {
@@ -68,19 +83,26 @@ function numeroAvance(carpeta: string): number {
   return Number(decodeURIComponent(carpeta).replace(/\/$/, '').split('/').pop()?.match(/^(\d+)/)?.[1] ?? 0)
 }
 
+/** "(LF Sub 16Octubre2026)" en el nombre = listado final (ojo: "03.-LF_GDL" es una empresa). */
+const esFinal = (url: string) => /\(\s*LF\s/i.test(decodeURIComponent(url.split('/').pop() ?? ''))
+
 /** Todas las empresas de un patio, en su versión más reciente. */
 async function listadosDePatio(carpeta: string): Promise<ArchivoListado[]> {
   const raiz = enlaces(await (await traer(carpeta)).text(), carpeta)
-  if (raiz.pdfs.length) return raiz.pdfs.map((u) => archivo(u, 'Listado final'))
-  const avances = [...raiz.carpetas].sort((a, b) => numeroAvance(b) - numeroAvance(a))
+  if (raiz.pdfs.length && raiz.pdfs.every(esFinal)) return raiz.pdfs.map((u) => archivo(u, 'Listado final'))
+  const avances = [...raiz.carpetas].filter((c) => numeroAvance(c) > 0).sort((a, b) => numeroAvance(b) - numeroAvance(a))
+  let ultimo: ArchivoListado[] = []
   for (const c of avances) {
     const pdfs = enlaces(await (await traer(c)).text(), c).pdfs
-    if (pdfs.length) {
-      const nombre = decodeURIComponent(c).replace(/\/$/, '').split('/').pop() ?? ''
-      return pdfs.map((u) => archivo(u, `${nombre} avance`))
-    }
+    if (!pdfs.length) continue
+    const nombre = decodeURIComponent(c).replace(/\/$/, '').split('/').pop() ?? ''
+    if (pdfs.some(esFinal)) return pdfs.filter(esFinal).map((u) => archivo(u, 'Listado final'))
+    if (!ultimo.length) ultimo = pdfs.map((u) => archivo(u, `${nombre} avance`))
+    // Sin "LF" en ningún avance, basta con el más alto.
+    if (!raiz.pdfs.length) break
   }
-  return []
+  if (raiz.pdfs.length) return raiz.pdfs.map((u) => archivo(u, 'Listado final'))
+  return ultimo
 }
 
 /**
@@ -95,11 +117,14 @@ export async function buscarListados(entrada: string): Promise<ArchivoListado[]>
   if (url.hostname !== 'prosubastas.com.mx' || !url.pathname.startsWith('/subastas/')) {
     throw new Error('El enlace debe ser de prosubastas.com.mx/subastas/…')
   }
-  // /subastas/<fecha>/<patio>/[1er/][archivo.pdf] → nos quedamos con fecha y patio.
-  const partes = url.pathname.replace(/^\/subastas\//, '').split('/').filter(Boolean).filter((p) => !/\.pdf$/i.test(p))
-  if (!/^\d{4}_\d{2}_\d{2}$/.test(partes[0] ?? '')) throw new Error('El enlace debe incluir la carpeta de la fecha, p. ej. …/subastas/2026_10_09/')
-  const fechaCarpeta = `${BASE}${partes[0]}/`
-  if (partes[1]) return listadosDePatio(`${fechaCarpeta}${partes[1]}/`)
+  // /subastas/<fecha>/<patio>/[1er/][archivo.pdf] o
+  // /subastas/<prefijo>/<patio>/<fecha>/[3er/][archivo.pdf] → fecha y patio.
+  const { partes, iFecha } = rutaDe(url.pathname)
+  if (iFecha < 0) throw new Error('El enlace debe incluir la carpeta de la fecha, p. ej. …/subastas/2026_10_09/')
+  const enc = (ps: string[]) => ps.map(encodeURIComponent).join('/')
+  if (iFecha > 0) return listadosDePatio(`${BASE}${enc(partes.slice(0, iFecha + 1))}/`)
+  const fechaCarpeta = `${BASE}${enc([partes[0]])}/`
+  if (partes[1]) return listadosDePatio(`${fechaCarpeta}${enc([partes[1]])}/`)
 
   const raiz = enlaces(await (await traer(fechaCarpeta)).text(), fechaCarpeta)
   return (await Promise.all(raiz.carpetas.map(listadosDePatio))).flat()
