@@ -895,3 +895,11 @@ finales A 362.5k / B 290.5k cuadran movimiento por movimiento. UI: Ventas
 por cerrar muestra "Falta cobrar" y `CierreModal` con la vista previa del
 reparto y los préstamos que se pagan; Socios → Liquidaciones como abonos.
 Sin construir: toma a cuenta (quién es dueño del carro recibido).
+
+### Prosubastas: rutas con prefijo (Subasta_IA) y "LF"
+- Además de `/subastas/<fecha>/<PATIO>/`, existe `/subastas/<prefijo>/<PATIO>/<fecha>/`
+  (p. ej. `Subasta_IA/TOL/2026_10_16/`): el patio es la carpeta ANTES de la fecha.
+- Ahí los PDF de la raíz no son el final: el final está en el avance más alto
+  (`3er/`) con "(LF …" en el nombre. Regla en `listadosDePatio`: si algún PDF
+  dice "(LF " se usan esos; si no, la raíz; si no, el avance más alto.
+  Ojo: "03.-LF_GDL" es una empresa, no "listado final".
